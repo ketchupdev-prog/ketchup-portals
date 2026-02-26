@@ -31,5 +31,6 @@
 
 ## Quick links
 
+- **Repository:** [https://github.com/ketchupdev-prog/ketchup-portals](https://github.com/ketchupdev-prog/ketchup-portals)
 - **Root README:** [../README.md](../README.md) – setup, env, scripts, deploy.
 - **Portals:** `/ketchup`, `/government`, `/agent`, `/field-ops`.

@@ -1,6 +1,6 @@
-# Ketchup SmartPay – Database & API Design
+# Ketchup Portals – Database & API Design
 
-This document defines the **database schema** and **API specifications** for the Ketchup SmartPay ecosystem, which includes four web portals and the beneficiary platform. The design aligns with the **PRD v1.3** and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
+This document defines the **database schema** and **API specifications** for the Ketchup Portals app (part of the Ketchup SmartPay G2P ecosystem). It covers four web portals and the beneficiary platform. The design aligns with the **PRD v1.3** and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
 
 ---
 

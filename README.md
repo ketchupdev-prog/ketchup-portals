@@ -2,6 +2,8 @@
 
 Web portals for the **Ketchup SmartPay** G2P (Government-to-Person) ecosystem: operations, compliance, field management, and agent interfaces. Single Next.js app with route-based separation for four portals. **Ketchup and the Buffr app are connected:** Ketchup issues vouchers to beneficiaries via Buffr (distribution, redemption, reconciliation); set `BUFFR_API_URL` and `BUFFR_API_KEY` when syncing or reconciling with Buffr.
 
+**Repository:** [https://github.com/ketchupdev-prog/ketchup-portals](https://github.com/ketchupdev-prog/ketchup-portals)
+
 ## Portals & routes
 
 | Portal        | Base path     | Purpose |

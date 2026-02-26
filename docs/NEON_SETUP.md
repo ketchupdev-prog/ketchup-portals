@@ -1,4 +1,4 @@
-# Neon + Drizzle setup (Ketchup SmartPay)
+# Neon + Drizzle setup (Ketchup Portals)
 
 This project uses **Neon** (serverless Postgres) with **Drizzle ORM** and the **HTTP adapter** for Vercel/serverless. The setup follows [Neon’s Drizzle integration guidelines](https://github.com/neondatabase-labs/ai-rules/blob/main/neon-drizzle.mdc) and [Neon Serverless driver](https://github.com/neondatabase-labs/ai-rules/blob/main/neon-serverless.mdc).
 

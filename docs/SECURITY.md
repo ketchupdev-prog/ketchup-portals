@@ -65,6 +65,7 @@ Guidance for securing the Ketchup Portals API and addressing common vulnerabilit
 
 | Item | Status |
 |------|--------|
+| No secrets in repo (use `.env` / `.env.local` / `backend/.env`; never commit; use `.env.example` for variable names only) | Enforced via `.gitignore` |
 | Input validation (body + path params) on sensitive routes | Partial (login, SMS; extend to others) |
 | Parameterized DB queries | Done (Drizzle) |
 | Auth and RBAC on sensitive APIs | Not implemented |

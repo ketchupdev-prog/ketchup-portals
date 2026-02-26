@@ -1,4 +1,4 @@
-cant we# Neon + Drizzle + Next.js – Database setup and migrations
+# Neon + Drizzle + Next.js – Database setup and migrations
 
 Reference: **Archon MCP** (Drizzle docs), **Neon MCP** (neon-drizzle integration guide). This doc aligns ketchup-portals with Neon and Drizzle best practices and describes how to use `.sql` migration files.
 
