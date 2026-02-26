@@ -19,7 +19,7 @@ export default function AgentsPage() {
     if (regionFilter) params.set('region', regionFilter);
     if (statusFilter) params.set('status', statusFilter);
     setLoading(true);
-    fetch(`/api/v1/agents?${params.toString()}`)
+    fetch(`/api/v1/agents?${params.toString()}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
         const list = (json.data ?? []).map((a: { id: string; name: string; address?: string | null; float_balance?: string | null; status: string }) => ({

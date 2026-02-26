@@ -21,20 +21,23 @@ export interface BrandLogoProps {
 
 export function BrandLogo({
   variant = 'horizontal',
-  src,
-  alt = 'Ketchup',
+  src = '/ketchup-logo.png',
+  alt = 'Ketchup SmartPay',
   width = 120,
   height = 40,
   className = '',
 }: BrandLogoProps) {
   if (src != null) {
+    const isMark = variant === 'mark';
+    const w = isMark ? Math.min(width, height) : width;
+    const h = isMark ? Math.min(width, height) : height;
     return (
       <Image
         src={src}
         alt={alt}
-        width={width}
-        height={height}
-        className={cn('object-contain', className)}
+        width={w}
+        height={h}
+        className={cn('object-contain', isMark && 'rounded-full', className)}
       />
     );
   }

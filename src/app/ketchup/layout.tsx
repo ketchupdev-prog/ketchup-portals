@@ -1,9 +1,9 @@
-import { PortalLayout } from '@/components/portal-layout';
+import { PortalLayoutOrAuthShell } from '@/components/portal-layout/PortalLayoutOrAuthShell';
 
 export default function KetchupPortalLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <PortalLayout>{children}</PortalLayout>;
+  return <PortalLayoutOrAuthShell portal="ketchup">{children}</PortalLayoutOrAuthShell>;
 }

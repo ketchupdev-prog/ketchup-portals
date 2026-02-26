@@ -4,6 +4,19 @@ Web portals for the **Ketchup SmartPay** G2P (Government-to-Person) ecosystem: o
 
 **Repository:** [https://github.com/ketchupdev-prog/ketchup-portals](https://github.com/ketchupdev-prog/ketchup-portals)
 
+## Quick start
+
+```bash
+npm install
+# Create .env or .env.local with DATABASE_URL (Neon Postgres)
+npm run db:check          # Verify DB connection
+node scripts/apply-0005-0006.mjs   # Optional: apply migrations 0004–0006 if DB is behind
+npm run db:seed           # Seed roles, permissions, and portal users
+npm run dev               # http://localhost:3000
+```
+
+Then open **http://localhost:3000/login** and sign in with a seeded user (see [Portal auth & seed users](#portal-auth--seed-users)).
+
 ## Portals & routes
 
 | Portal        | Base path     | Purpose |
@@ -59,6 +72,11 @@ Required and optional env vars are validated at runtime via `src/lib/env.ts` (Zo
 | `npm run dev` | Start dev server (default [http://localhost:3000](http://localhost:3000)). |
 | `npm run build` | Production build (needs `DATABASE_URL` in env for API routes). |
 | `npm run start` | Start production server. |
+| `npm run db:check` | Verify database connection (reads from `DATABASE_URL`). |
+| `npm run db:migrate` | Run Drizzle migrations (`drizzle-kit migrate`). |
+| `npm run db:seed` | Seed roles, permissions, and portal users (see [Portal auth & seed users](#portal-auth--seed-users)). |
+| `npm run db:push` | Push schema to DB (`drizzle-kit push`). |
+| `npm run db:generate` | Generate migrations from schema (`drizzle-kit generate`). |
 | `npm run lint` | Run ESLint. |
 | `npm run type-check` | Run TypeScript check (`tsc --noEmit`). |
 | `npm run test` | Run Vitest unit tests (utils, validate, env, voucher-service). |
@@ -70,23 +88,49 @@ Required and optional env vars are validated at runtime via `src/lib/env.ts` (Zo
 
 - Schema: `src/db/schema.ts` (aligned with [docs/DATABASE_AND_API_DESIGN.md](docs/DATABASE_AND_API_DESIGN.md)).
 - Drizzle config: `drizzle.config.ts` (uses `.env.local`).
+- Migrations: `drizzle/` (e.g. `0004_audit_prd_float_preferences_indexes.sql`, `0005_roles_permissions.sql`, `0006_canonical_redemption_ref.sql`). If the DB is behind the journal, run `node scripts/apply-0005-0006.mjs` to apply 0004–0006 manually.
 
 ```bash
-# Generate migrations
-npx drizzle-kit generate
+# Generate migrations from schema
+npm run db:generate
 
-# Push schema to DB
-npx drizzle-kit push
+# Run migrations (standard)
+npm run db:migrate
+
+# Or push schema directly (dev)
+npm run db:push
 ```
+
+## Portal auth & seed users
+
+- **Auth:** Portal uses cookie-based session. `POST /api/v1/auth/login` (email + password) sets a `portal-auth` cookie; protected APIs (e.g. `GET /api/v1/portal/dashboard/summary`) require this cookie or `Authorization: Bearer <token>`. See [docs/NEON_AUTH_SETUP.md](docs/NEON_AUTH_SETUP.md) and [docs/SECURITY.md](docs/SECURITY.md).
+- **RBAC:** Roles and permissions are in DB; APIs use `requirePermission` (e.g. `dashboard.summary` for Ketchup dashboard). Admin APIs: `GET/PUT /api/v1/admin/roles`, `GET/PUT /api/v1/admin/roles/:id`, `GET /api/v1/admin/permissions`, `GET /api/v1/admin/users`, `PATCH /api/v1/admin/users/:id`.
+- **Seed users:** After `npm run db:seed`, you can sign in at `/login` with any of the seeded portal users. **Password for all:** `TestPassword1!`
+
+| Email | Role |
+|-------|------|
+| seed-ketchup_ops@test.ketchup.local | Ketchup ops (full Ketchup dashboard access) |
+| seed-ketchup_finance@test.ketchup.local | Ketchup finance |
+| seed-ketchup_compliance@test.ketchup.local | Ketchup compliance |
+| seed-gov_manager@test.ketchup.local | Government manager |
+| seed-agent@test.ketchup.local | Agent |
+| seed-field_tech@test.ketchup.local | Field tech |
+| seed-field_lead@test.ketchup.local | Field lead |
+
+If you open a protected page (e.g. `/ketchup/dashboard`) without being logged in, the app redirects to `/login?redirect=...` and returns you to the page after sign-in.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [KETCHUP_PORTALS_PRD.md](KETCHUP_PORTALS_PRD.md) | Product requirements (v1.3). |
+| [KETCHUP_PORTALS_PRD.md](KETCHUP_PORTALS_PRD.md) | Product requirements (v1.4). |
+| [docs/PRD_AUDIT_REPORT_v1.4.1.md](docs/PRD_AUDIT_REPORT_v1.4.1.md) | PRD audit report and validation checklist. |
 | [PRD_IMPLEMENTATION_STATUS.md](PRD_IMPLEMENTATION_STATUS.md) | Implementation status vs PRD. |
+| [WHATS_LEFT_TO_IMPLEMENT.md](WHATS_LEFT_TO_IMPLEMENT.md) | Short “what’s left” checklist. |
 | [docs/DATABASE_AND_API_DESIGN.md](docs/DATABASE_AND_API_DESIGN.md) | Database schema and `/api/v1` API spec. |
+| [docs/DATES.md](docs/DATES.md) | Date handling: storage, API format, UI display, date-fns. |
 | [docs/NEON_SETUP.md](docs/NEON_SETUP.md) | Neon + Drizzle setup and connection. |
+| [docs/NEON_AUTH_SETUP.md](docs/NEON_AUTH_SETUP.md) | Portal auth (cookie/Bearer) and Neon. |
 | [docs/SMS_DESIGN.md](docs/SMS_DESIGN.md) | SMS queue, cron, webhooks, env vars. |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security: validation, logging, auth, rate limiting, CORS. |
 | [docs/NEON_DRIZZLE_NEXTJS_SETUP.md](docs/NEON_DRIZZLE_NEXTJS_SETUP.md) | Neon + Drizzle + Next.js: connection, migrations, .sql workflow. |

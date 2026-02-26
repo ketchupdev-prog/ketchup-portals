@@ -13,6 +13,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { REGION_SELECT_OPTIONS } from '@/lib/regions';
 
 const SAMPLE_INCIDENTS = [
   { id: 'i1', date: '2025-02-20', description: 'Suspicious redemption pattern', impact: 'Low', actionsTaken: 'Account reviewed', resolution: 'Resolved – beneficiary verified' },
@@ -97,7 +98,7 @@ export default function CompliancePage() {
             }
           />
           <Select
-            options={[{ value: '', label: 'All regions' }, { value: 'Khomas', label: 'Khomas' }, { value: 'Erongo', label: 'Erongo' }]}
+            options={REGION_SELECT_OPTIONS}
             value={regionFilter}
             onChange={(e) => setRegionFilter(e.target.value)}
             inputSize="sm"

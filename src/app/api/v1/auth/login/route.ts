@@ -13,6 +13,8 @@ import { jsonError } from "@/lib/api-response";
 import { validateBody, schemas } from "@/lib/validate";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, getClientKey } from "@/lib/rate-limit";
+import { portalAuthCookieValue } from "@/lib/portal-auth";
+import { logLoginAttempt } from "@/lib/audit-log";
 
 const ROUTE = "POST /api/v1/auth/login";
 const LOGIN_RATE_LIMIT = 10; // requests per minute per IP
@@ -50,11 +52,23 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (!user) {
+      await logLoginAttempt({
+        success: false,
+        identifier: email,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
+        userAgent: request.headers.get("user-agent") ?? null,
+      });
       return jsonError("Invalid email or password", "Unauthorized", undefined, 401, ROUTE);
     }
 
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
+      await logLoginAttempt({
+        success: false,
+        identifier: email,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
+        userAgent: request.headers.get("user-agent") ?? null,
+      });
       return jsonError("Invalid email or password", "Unauthorized", undefined, 401, ROUTE);
     }
 
@@ -63,15 +77,24 @@ export async function POST(request: NextRequest) {
       .set({ lastLogin: new Date() })
       .where(eq(portalUsers.id, user.id));
 
+    await logLoginAttempt({
+      success: true,
+      userId: user.id,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
+      userAgent: request.headers.get("user-agent") ?? null,
+    });
+
     const exp = Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SEC;
     const payload = { sub: user.id, email: user.email, role: user.role, exp };
     const access_token = Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url");
 
-    return Response.json({
+    const response = Response.json({
       access_token,
       token_type: "Bearer",
       expires_in: TOKEN_EXPIRY_SEC,
     });
+    response.headers.set("Set-Cookie", portalAuthCookieValue(access_token, TOKEN_EXPIRY_SEC));
+    return response;
   } catch (err) {
     logger.error(ROUTE, err instanceof Error ? err.message : "Internal server error", {
       name: err instanceof Error ? err.name : undefined,

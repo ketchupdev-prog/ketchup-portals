@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { portalFetch } from '@/lib/portal-fetch';
 import { SectionHeader } from '@/components/ui/section-header';
 import { MetricCard } from '@/components/ui/metric-card';
 import { DataTable } from '@/components/ui/data-table';
@@ -14,6 +15,7 @@ import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { REGION_SELECT_OPTIONS } from '@/lib/regions';
 
 type DuplicateRow = {
   id: string;
@@ -94,6 +96,7 @@ export default function DuplicateRedemptionsPage() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [resolveModalOpen, setResolveModalOpen] = useState(false);
@@ -111,7 +114,7 @@ export default function DuplicateRedemptionsPage() {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/advance-ledger/summary');
+      const res = await portalFetch('/api/v1/advance-ledger/summary');
       const json = await res.json();
       if (res.ok) {
         setSummary({
@@ -131,10 +134,11 @@ export default function DuplicateRedemptionsPage() {
     params.set('page', String(page));
     params.set('limit', '20');
     if (statusFilter) params.set('status', statusFilter);
+    if (regionFilter) params.set('region', regionFilter);
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     try {
-      const res = await fetch(`/api/v1/vouchers/duplicates?${params.toString()}`);
+      const res = await portalFetch(`/api/v1/vouchers/duplicates?${params.toString()}`);
       const json = await res.json();
       if (res.ok && json.data) {
         setData(json.data.map((r: DuplicateRow) => ({
@@ -154,7 +158,7 @@ export default function DuplicateRedemptionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, fromDate, toDate, addToast]);
+  }, [page, statusFilter, regionFilter, fromDate, toDate, addToast]);
 
   useEffect(() => {
     fetchSummary();
@@ -176,6 +180,7 @@ export default function DuplicateRedemptionsPage() {
     setSubmitting(true);
     try {
       const res = await fetch(`/api/v1/vouchers/duplicates/${selectedEvent.id}`, {
+        credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: resolveStatus, resolution_notes: resolveNotes || undefined }),
@@ -207,7 +212,7 @@ export default function DuplicateRedemptionsPage() {
     setAdvanceLedger([]);
     setAdvanceLedgerLoading(true);
     try {
-      const res = await fetch(`/api/v1/beneficiaries/${beneficiaryId}/advance-ledger`);
+      const res = await fetch(`/api/v1/beneficiaries/${beneficiaryId}/advance-ledger`, { credentials: 'include' });
       const json = await res.json();
       if (res.ok) {
         setAdvanceLedger(json.advances ?? []);
@@ -272,6 +277,13 @@ export default function DuplicateRedemptionsPage() {
         />
       </div>
       <div className="flex flex-wrap gap-4 items-end">
+        <Select
+          options={REGION_SELECT_OPTIONS}
+          value={regionFilter}
+          onChange={(e) => setRegionFilter(e.target.value)}
+          inputSize="sm"
+          className="w-40"
+        />
         <Select
           options={STATUS_OPTIONS}
           value={statusFilter}

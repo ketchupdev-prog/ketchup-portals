@@ -1,11 +1,13 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { KetchupSidebar } from '@/components/sidebars/ketchup-sidebar';
 import { GovernmentSidebar } from '@/components/sidebars/government-sidebar';
 import { AgentSidebar } from '@/components/sidebars/agent-sidebar';
 import { FieldOpsSidebar } from '@/components/sidebars/field-ops-sidebar';
 import { Header } from '@/components/header';
+import { getPortalFromPath, getPortalLoginPath } from '@/lib/portal-auth-config';
 
 export interface PortalLayoutProps {
   children: React.ReactNode;
@@ -13,6 +15,28 @@ export interface PortalLayoutProps {
 
 export function PortalLayout({ children }: PortalLayoutProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+  const checkingRef = useRef(false);
+
+  useEffect(() => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+    fetch('/api/v1/portal/me', { credentials: 'include' })
+      .then((res) => {
+        if (res.status === 401) {
+          const path = pathname || '/ketchup/dashboard';
+          const portal = getPortalFromPath(path) ?? 'ketchup';
+          router.replace(getPortalLoginPath(portal, path));
+          return;
+        }
+        setAuthChecked(true);
+      })
+      .catch(() => setAuthChecked(true))
+      .finally(() => {
+        checkingRef.current = false;
+      });
+  }, [pathname, router]);
 
   const sidebar = pathname.startsWith('/ketchup') ? (
     <KetchupSidebar />
@@ -23,6 +47,14 @@ export function PortalLayout({ children }: PortalLayoutProps) {
   ) : pathname.startsWith('/field-ops') ? (
     <FieldOpsSidebar />
   ) : null;
+
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-base-100">
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen">

@@ -6,21 +6,9 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { SectionHeader } from '@/components/ui/section-header';
-import { SearchHeader } from '@/components/ui/search-header';
-import { DataTable } from '@/components/ui/data-table';
-import { Select } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-
-type UnverifiedRow = { id: string; name: string; region: string; programme: string; daysOverdue: number };
-
-const COLS = [
-  { key: 'name', header: 'Name' },
-  { key: 'region', header: 'Region' },
-  { key: 'programme', header: 'Programme' },
-  { key: 'daysOverdue', header: 'Days overdue' },
-];
+import { UnverifiedList, type UnverifiedRow } from '@/components/government';
+import { normalizeRegion } from '@/lib/regions';
 
 function daysOverdue(dueDateIso: string | null): number {
   if (!dueDateIso) return 0;
@@ -29,18 +17,6 @@ function daysOverdue(dueDateIso: string | null): number {
   now.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
   return Math.max(0, Math.floor((now.getTime() - due.getTime()) / (24 * 60 * 60 * 1000)));
-}
-
-function exportCSV(rows: UnverifiedRow[], filename: string) {
-  const header = COLS.map((c) => c.header).join(',');
-  const body = rows.map((r) => COLS.map((c) => String((r as Record<string, unknown>)[c.key] ?? '')).join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function mapApiToRow(r: { id: string; full_name: string; region: string | null; proof_of_life_due_date: string | null }): UnverifiedRow {
@@ -56,7 +32,7 @@ export default function GovernmentUnverifiedPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/beneficiaries/unverified?page=1&limit=500')
+    fetch('/api/v1/beneficiaries/unverified?page=1&limit=500', { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -68,24 +44,34 @@ export default function GovernmentUnverifiedPage() {
     return () => { cancelled = true; };
   }, [addToast]);
 
-  const regions = useMemo(() => Array.from(new Set(data.map((r) => r.region).filter(Boolean))).sort(), [data]);
-  const filtered = useMemo(() => (regionFilter ? data.filter((r) => r.region === regionFilter) : data), [data, regionFilter]);
+  const filtered = useMemo(
+    () =>
+      !regionFilter
+        ? data
+        : data.filter((r) => normalizeRegion(r.region) === regionFilter || r.region === regionFilter),
+    [data, regionFilter]
+  );
+
+  const handleExport = () => {
+    const header = 'name,region,programme,daysOverdue';
+    const body = filtered.map((r) => [r.name, r.region, r.programme, r.daysOverdue].join(',')).join('\n');
+    const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `unverified-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addToast('Exported.', 'success');
+  };
 
   return (
-    <div className="space-y-6">
-      <SectionHeader title="Unverified beneficiaries" description="Proof-of-life overdue; export for field follow-up." />
-      <SearchHeader
-        title="Unverified list"
-        action={<Button variant="outline" size="sm" onClick={() => { exportCSV(filtered, `unverified-${new Date().toISOString().slice(0, 10)}.csv`); addToast('Exported.', 'success'); }}>Export CSV</Button>}
-      />
-      <Select
-        options={[{ value: '', label: 'All regions' }, ...regions.map((r) => ({ value: r, label: r }))]}
-        value={regionFilter}
-        onChange={(e) => setRegionFilter(e.target.value)}
-        inputSize="sm"
-        className="w-40"
-      />
-      <DataTable columns={COLS} data={filtered} keyExtractor={(r) => r.id} emptyMessage={loading ? 'Loading…' : 'No unverified beneficiaries.'} />
-    </div>
+    <UnverifiedList
+      data={filtered}
+      loading={loading}
+      regionFilter={regionFilter}
+      onRegionFilterChange={setRegionFilter}
+      onExportCSV={handleExport}
+    />
   );
 }

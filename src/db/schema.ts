@@ -15,6 +15,7 @@ import {
   jsonb,
   numeric,
   inet,
+  unique,
 } from "drizzle-orm/pg-core";
 
 // ─── Core (shared with beneficiary platform) ─────────────────────────────────
@@ -91,7 +92,7 @@ export const agents = pgTable("agents", {
   address: text("address"),
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
-  commissionRate: numeric("commission_rate", { precision: 5, scale: 2 }),
+  commissionRate: numeric("commission_rate", { precision: 5, scale: 2 }), // decimal % e.g. 0.5 = 0.5%, 2.25 = 2.25%
   floatBalance: numeric("float_balance", { precision: 14, scale: 2 }).default("0"),
   status: text("status").notNull().default("active"), // active | suspended
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -113,18 +114,19 @@ export const transactions = pgTable("transactions", {
 });
 
 // Portal users (referenced by audit_logs, float_requests, maintenance_logs, tasks, proof_of_life_events)
+// role: legacy text (ketchup_ops, agent, etc.). When role_id is set, permissions come from that role; else from role text.
 export const portalUsers = pgTable("portal_users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   fullName: text("full_name").notNull(),
-  role: text("role").notNull(), // ketchup_ops | ketchup_compliance | ketchup_finance | ketchup_support | gov_manager | gov_auditor | agent | field_tech | field_lead
+  role: text("role").notNull(), // legacy: ketchup_ops | ketchup_compliance | ... | agent | field_tech | field_lead
+  roleId: uuid("role_id").references((): any => roles.id), // optional FK; when set, permissions from roles/permissions
   agentId: uuid("agent_id").references(() => agents.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLogin: timestamp("last_login", { withTimezone: true }),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
   twoFactorSecret: text("two_factor_secret"),
-  /** Optional phone for SMS (e.g. field_tech, field_lead) – task assigned, alerts */
   phone: text("phone"),
 });
 
@@ -150,6 +152,40 @@ export const loans = pgTable("loans", {
 
 // ─── Portal-specific ───────────────────────────────────────────────────────
 
+/** Configurable roles (admin-managed). Permissions attached via role_permissions. */
+export const roles = pgTable("roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(), // e.g. ketchup_ops, agent, gov_manager
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Permissions (admin-managed). Resource.action e.g. float_requests.list, admin.manage_users. */
+export const permissions = pgTable("permissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  resource: text("resource").notNull(),
+  action: text("action").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Which permissions each role has. Admins can change this. */
+export const rolePermissions = pgTable("role_permissions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  roleId: uuid("role_id")
+    .notNull()
+    .references(() => roles.id, { onDelete: "cascade" }),
+  permissionId: uuid("permission_id")
+    .notNull()
+    .references(() => permissions.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique().on(t.roleId, t.permissionId)]);
+
+// NOTE: portal_users is defined once above (~line 118). Do not add a second definition here.
 export const agentFloatTransactions = pgTable("agent_float_transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   agentId: uuid("agent_id")
@@ -168,10 +204,13 @@ export const floatRequests = pgTable("float_requests", {
     .notNull()
     .references(() => agents.id),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
-  status: text("status").notNull().default("pending"), // pending | approved | rejected
+  status: text("status").notNull().default("pending"), // pending | approved_pending_second | approved | rejected
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  requestedBy: uuid("requested_by").references(() => portalUsers.id),
   reviewedBy: uuid("reviewed_by").references(() => portalUsers.id),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  firstReviewedBy: uuid("first_reviewed_by").references(() => portalUsers.id),
+  firstReviewedAt: timestamp("first_reviewed_at", { withTimezone: true }),
 });
 
 export const posTerminals = pgTable("pos_terminals", {
@@ -334,6 +373,23 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Portal user preferences (notification_preferences etc.) – Profile & Settings spec.
+// preference_value: JSONB for efficient JSON ops; stores e.g. { agent_low_float: { in_app: true, email: false, sms: true } }
+export const portalUserPreferences = pgTable(
+  "portal_user_preferences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    portalUserId: uuid("portal_user_id")
+      .notNull()
+      .references(() => portalUsers.id, { onDelete: "cascade" }),
+    preferenceKey: text("preference_key").notNull().default("notification_preferences"),
+    preferenceValue: jsonb("preference_value"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.portalUserId, t.preferenceKey)]
+);
+
 // ─── Offline Redemption Integrity & Advance Recovery (PRD §3.3.11) ───────────
 
 /**
@@ -361,6 +417,7 @@ export const duplicateRedemptionEvents = pgTable("duplicate_redemption_events", 
   detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull().default("advance_posted"),
   resolutionNotes: text("resolution_notes"),
+  appealEvidenceUrl: text("appeal_evidence_url"), // URL to stored evidence (e.g. Supabase Storage) for agent appeal
   resolvedBy: uuid("resolved_by").references(() => portalUsers.id),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });

@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     if (inserted.assignedTo) {
       const { queueSmsToPhone } = await import("@/lib/services/sms-queue");
       const { createInAppNotification } = await import("@/lib/services/notifications");
+      const { isNotificationChannelEnabled } = await import("@/lib/services/notification-preferences");
       const { portalUsers } = await import("@/db/schema");
       const assignee = await db
         .select({ id: portalUsers.id, phone: portalUsers.phone })
@@ -87,7 +88,12 @@ export async function POST(request: NextRequest) {
           body: inserted.title,
           link: "/field-ops/tasks",
         });
-        if (assignee.phone) {
+        const smsEnabled = await isNotificationChannelEnabled(
+          assignee.id,
+          "field_task_assigned",
+          "sms"
+        );
+        if (assignee.phone && smsEnabled) {
           await queueSmsToPhone({
             phone: assignee.phone,
             message: `Ketchup SmartPay: You have been assigned a task: ${inserted.title}. Log in to view details.`,

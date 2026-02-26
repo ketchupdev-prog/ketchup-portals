@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { SearchHeader } from '@/components/ui/search-header';
 import { DataTable } from '@/components/ui/data-table';
 import { Select } from '@/components/ui/select';
+import { REGION_SELECT_OPTIONS } from '@/lib/regions';
 
 export interface AgentRow {
   id: string;
@@ -30,14 +31,6 @@ export interface AgentTableProps {
   onRegionFilterChange?: (value: string) => void;
   onStatusFilterChange?: (value: string) => void;
 }
-
-const REGION_OPTIONS = [
-  { value: '', label: 'All regions' },
-  { value: 'Khomas', label: 'Khomas' },
-  { value: 'Erongo', label: 'Erongo' },
-  { value: 'Otjozondjupa', label: 'Otjozondjupa' },
-  { value: 'Other', label: 'Other' },
-];
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All' },
@@ -71,7 +64,7 @@ export function AgentTable({
       <SearchHeader title="Agents" searchPlaceholder="Search by name or location..." />
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Select
-          options={REGION_OPTIONS}
+          options={REGION_SELECT_OPTIONS}
           value={regionFilter}
           onChange={(e) => onRegionFilterChange?.(e.target.value)}
           inputSize="sm"

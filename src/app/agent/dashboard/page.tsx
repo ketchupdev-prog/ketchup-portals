@@ -28,14 +28,14 @@ export default function AgentDashboardPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/agents?limit=1')
+    fetch('/api/v1/agents?limit=1', { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
         const id = json.data?.[0]?.id ?? null;
         setAgentId(id);
         if (!id) return;
-        return fetch(`/api/v1/agent/dashboard?agent_id=${id}`);
+        return fetch(`/api/v1/agent/dashboard?agent_id=${id}`, { credentials: 'include' });
       })
       .then((res) => res && !cancelled ? res.json() : null)
       .then((json) => {

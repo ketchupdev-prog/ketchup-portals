@@ -64,9 +64,9 @@ export default function AgentDetailPage() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      fetch(`/api/v1/agents/${id}`).then((r) => r.json()),
-      fetch(`/api/v1/agents/${id}/transactions?limit=20`).then((r) => r.json()),
-      fetch(`/api/v1/agent/parcels?agent_id=${id}&limit=20`).then((r) => r.json()),
+      fetch(`/api/v1/agents/${id}`, { credentials: 'include' }).then((r) => r.json()),
+      fetch(`/api/v1/agents/${id}/transactions?limit=20`, { credentials: 'include' }).then((r) => r.json()),
+      fetch(`/api/v1/agent/parcels?agent_id=${id}&limit=20`, { credentials: 'include' }).then((r) => r.json()),
     ])
       .then(([agentRes, txRes, parcelRes]) => {
         if (cancelled) return;
@@ -93,6 +93,7 @@ export default function AgentDetailPage() {
     setAdjustSubmitting(true);
     try {
       const res = await fetch(`/api/v1/agents/${id}/float`, {
+        credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount, type: adjustType }),

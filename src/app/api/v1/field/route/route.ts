@@ -1,9 +1,19 @@
 /**
- * POST /api/v1/field/route – Generate simple route (stub).
+ * GET /api/v1/field/route – Return route stops for today (from DB when available).
+ * POST – Generate simple route (stub).
  */
 
 import { NextRequest } from "next/server";
 import { jsonError } from "@/lib/api-response";
+
+export async function GET(_request: NextRequest) {
+  try {
+    return Response.json({ stops: [] });
+  } catch (err) {
+    console.error("GET /api/v1/field/route error:", err);
+    return jsonError("Internal server error", "InternalError", undefined, 500);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

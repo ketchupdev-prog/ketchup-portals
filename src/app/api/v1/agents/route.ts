@@ -12,6 +12,7 @@ import {
   jsonPaginated,
   jsonError,
 } from "@/lib/api-response";
+import { isValidRegion, normalizeRegion } from "@/lib/regions";
 
 const basePath = "/api/v1/agents";
 
@@ -20,7 +21,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");
-    const region = searchParams.get("region"); // filter by address/region if needed
+    const regionParam = searchParams.get("region");
+
+    const region = regionParam
+      ? (isValidRegion(regionParam) ? normalizeRegion(regionParam)! : null)
+      : undefined;
+    if (regionParam != null && regionParam !== "" && !region) {
+      return jsonError("Invalid region", "ValidationError", undefined, 400);
+    }
 
     const conditions = [];
     if (status) conditions.push(eq(agents.status, status));

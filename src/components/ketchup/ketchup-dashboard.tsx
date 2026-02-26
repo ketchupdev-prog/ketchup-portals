@@ -2,48 +2,79 @@
 
 /**
  * Ketchup Dashboard – PRD §3.2.1.
- * Fetches counts from API and renders DrillDownCards + DashboardCards + RecentActivity.
+ * Fetches KPIs from GET /api/v1/portal/dashboard/summary; renders DrillDownCards, DashboardCards, RecentActivity.
+ * Uses LoadingState and ErrorState per PRD §19. On 401, redirects to login so the portal-auth cookie can be set.
  * Location: src/components/ketchup/ketchup-dashboard.tsx
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { DrillDownCard } from '@/components/ui/drill-down-card';
 import { DashboardCards } from '@/components/ketchup/dashboard-cards';
 import { RecentActivity } from '@/components/ketchup/recent-activity';
+import { LoadingState } from '@/components/loading-state';
+import { ErrorState } from '@/components/error-state';
+import { getPortalLoginPath } from '@/lib/portal-auth-config';
 
-type Counts = {
-  beneficiaries: number;
-  vouchers: number;
+type Summary = {
   activeVouchers: number;
-  agents: number;
+  beneficiariesCount: number;
+  agentsCount: number;
+  pendingFloatRequestsCount: number;
 };
 
 export function KetchupDashboard() {
-  const [counts, setCounts] = useState<Counts | null>(null);
+  const router = useRouter();
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSummary = () => {
+    setError(null);
+    setLoading(true);
+    fetch('/api/v1/portal/dashboard/summary', { credentials: 'include' })
+      .then((res) => {
+        if (res.status === 401) {
+          const returnUrl = typeof window !== 'undefined' ? window.location.pathname : '/ketchup/dashboard';
+          router.replace(getPortalLoginPath('ketchup', returnUrl));
+          throw new Error('Unauthorized');
+        }
+        if (!res.ok) throw new Error(res.status === 403 ? 'Forbidden' : 'Failed to load');
+        return res.json();
+      })
+      .then((json) => {
+        setSummary(json.data ?? null);
+      })
+      .catch((e) => {
+        if (e.message !== 'Unauthorized') setError(e.message ?? 'Failed to load dashboard');
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      fetch('/api/v1/beneficiaries?page=1&limit=1').then((r) => r.json()),
-      fetch('/api/v1/vouchers?page=1&limit=1').then((r) => r.json()),
-      fetch('/api/v1/vouchers?status=available&page=1&limit=1').then((r) => r.json()),
-      fetch('/api/v1/agents?page=1&limit=1').then((r) => r.json()),
-    ])
-      .then(([b, v, av, a]) => {
-        if (cancelled) return;
-        setCounts({
-          beneficiaries: b.meta?.totalRecords ?? 0,
-          vouchers: v.meta?.totalRecords ?? 0,
-          activeVouchers: av.meta?.totalRecords ?? 0,
-          agents: a.meta?.totalRecords ?? 0,
-        });
-      })
-      .catch(() => { if (!cancelled) setCounts(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    fetchSummary();
   }, []);
 
+  if (loading) {
+    return <LoadingState message="Loading dashboard…" />;
+  }
+
+  if (error) {
+    return (
+      <ErrorState
+        title="Dashboard unavailable"
+        message={error}
+        onRetry={fetchSummary}
+      />
+    );
+  }
+
+  const s = summary ?? {
+    activeVouchers: 0,
+    beneficiariesCount: 0,
+    agentsCount: 0,
+    pendingFloatRequestsCount: 0,
+  };
   const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
   return (
@@ -52,24 +83,30 @@ export function KetchupDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <DrillDownCard
           title="Total Beneficiaries"
-          value={loading ? '—' : fmt(counts?.beneficiaries ?? 0)}
+          value={fmt(s.beneficiariesCount)}
           href="/ketchup/beneficiaries"
         />
         <DrillDownCard
-          title="Vouchers Issued"
-          value={loading ? '—' : fmt(counts?.vouchers ?? 0)}
-          href="/ketchup/vouchers"
+          title="Active Vouchers"
+          value={fmt(s.activeVouchers)}
+          href="/ketchup/vouchers?status=available"
         />
         <DrillDownCard
           title="Agents"
-          value={loading ? '—' : fmt(counts?.agents ?? 0)}
+          value={fmt(s.agentsCount)}
           href="/ketchup/agents"
+        />
+        <DrillDownCard
+          title="Pending Float Requests"
+          value={fmt(s.pendingFloatRequestsCount)}
+          href="/ketchup/float-requests?status=pending"
         />
       </div>
       <DashboardCards
-        activeVouchers={loading ? undefined : counts?.activeVouchers}
-        beneficiaries={loading ? undefined : counts?.beneficiaries}
-        agents={loading ? undefined : counts?.agents}
+        activeVouchers={s.activeVouchers}
+        beneficiaries={s.beneficiariesCount}
+        agents={s.agentsCount}
+        pendingFloat={s.pendingFloatRequestsCount}
       />
       <RecentActivity />
     </div>

@@ -2,21 +2,13 @@
 
 /**
  * Field Ops Unit/ATM Management – PRD §6.2.2.
- * Data from GET /api/v1/field/assets; filter by type; detail link.
+ * Data from GET /api/v1/field/assets; uses AssetList component.
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
-import { SectionHeader } from '@/components/ui/section-header';
-import { DataTable } from '@/components/ui/data-table';
-import { Tabs } from '@/components/ui/tabs';
-import { Select } from '@/components/ui/select';
-
-type AssetRow = { id: string; type: string; name: string; driver: string; location: string; lastActivity: string; lastMaintenance: string; cashLevel: string; status: string };
+import { AssetList, type AssetRow } from '@/components/field-ops';
 
 export default function FieldOpsAssetsPage() {
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState('units');
   const [typeFilter, setTypeFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<AssetRow[]>([]);
@@ -26,7 +18,7 @@ export default function FieldOpsAssetsPage() {
     setLoading(true);
     const params = new URLSearchParams({ page: '1', limit: '100' });
     if (typeFilter) params.set('type', typeFilter);
-    fetch(`/api/v1/field/assets?${params.toString()}`)
+    fetch(`/api/v1/field/assets?${params.toString()}`, { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -52,40 +44,13 @@ export default function FieldOpsAssetsPage() {
   const units = useMemo(() => data.filter((r) => r.type !== 'atm'), [data]);
   const atms = useMemo(() => data.filter((r) => r.type === 'atm'), [data]);
 
-  const tabs = [
-    {
-      key: 'units',
-      label: 'Mobile units',
-      content: (
-        <DataTable
-          columns={[{ key: 'name', header: 'Name' }, { key: 'driver', header: 'Driver' }, { key: 'location', header: 'Location' }, { key: 'lastActivity', header: 'Last activity' }, { key: 'status', header: 'Status' }]}
-          data={units}
-          keyExtractor={(r) => r.id}
-          onRowClick={(r) => router.push(`/field-ops/assets/${r.id}`)}
-          emptyMessage={loading ? 'Loading…' : 'No mobile units.'}
-        />
-      ),
-    },
-    {
-      key: 'atms',
-      label: 'ATMs',
-      content: (
-        <DataTable
-          columns={[{ key: 'name', header: 'Location' }, { key: 'cashLevel', header: 'Cash level' }, { key: 'status', header: 'Status' }, { key: 'lastMaintenance', header: 'Last maintenance' }]}
-          data={atms}
-          keyExtractor={(r) => r.id}
-          onRowClick={(r) => router.push(`/field-ops/assets/${r.id}`)}
-          emptyMessage={loading ? 'Loading…' : 'No ATMs.'}
-        />
-      ),
-    },
-  ];
-
   return (
-    <div className="space-y-6">
-      <SectionHeader title="Assets" description="Mobile units and ATMs; maintenance and replenishment." />
-      <Select options={[{ value: '', label: 'All types' }, { value: 'mobile', label: 'Mobile' }, { value: 'atm', label: 'ATM' }]} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} inputSize="sm" className="w-36" />
-      <Tabs tabs={tabs} value={activeTab} onChange={setActiveTab} variant="bordered" />
-    </div>
+    <AssetList
+      units={units}
+      atms={atms}
+      loading={loading}
+      typeFilter={typeFilter}
+      onTypeFilterChange={setTypeFilter}
+    />
   );
 }

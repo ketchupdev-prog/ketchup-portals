@@ -41,6 +41,7 @@ export function BeneficiaryDetailActions({
   const handleTriggerPOL = async () => {
     try {
       const res = await fetch(`/api/v1/beneficiaries/${beneficiaryId}/sms`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,6 +1,6 @@
 # Ketchup Portals – Database & API Design
 
-This document defines the **database schema** and **API specifications** for the Ketchup Portals app (part of the Ketchup SmartPay G2P ecosystem). It covers four web portals and the beneficiary platform. The design aligns with the **PRD v1.3** and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
+This document defines the **database schema** and **API specifications** for the Ketchup Portals app (part of the Ketchup SmartPay G2P ecosystem). It covers four web portals and the beneficiary platform. The design aligns with the **PRD v1.4** and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
 
 ---
 
@@ -21,11 +21,22 @@ These tables are already assumed to exist in the beneficiary platform database. 
 | full_name | TEXT | |
 | id_number | TEXT | National ID (if applicable) |
 | date_of_birth | DATE | |
-| region | TEXT | |
+| region | TEXT | One of Namibia’s 14 administrative regions (see §1.1.1). |
 | wallet_status | TEXT | active, frozen, suspended |
 | proof_of_life_due_date | TIMESTAMPTZ | |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
+
+#### 1.1.1 Regions (Namibia)
+
+All region filters, dropdowns, and `users.region` values should use **Namibia’s 14 administrative regions**. The single source of truth is **`src/lib/regions.ts`**, which exports:
+
+- **`NAMIBIA_REGION_CODES`** – 14 region codes (e.g. `Erongo`, `Hardap`, `Karas` for ǁKaras, `Kavango East`, `Kavango West`, `Khomas`, `Kunene`, `Ohangwena`, `Omaheke`, `Omusati`, `Oshana`, `Oshikoto`, `Otjozondjupa`, `Zambezi`).
+- **`REGION_SELECT_OPTIONS`** – `{ value, label }[]` for filter dropdowns (includes “All regions”).
+- **`isValidRegion(value)`** – use in API handlers to validate `region` query/body params.
+- **`normalizeRegion(value)`** – normalise input (e.g. “ǁKaras” or “karas” → `Karas`).
+
+List endpoints that accept a `region` query parameter (e.g. beneficiaries, agents, duplicate-redemptions) validate against these 14 regions and return 400 when invalid.
 
 #### `vouchers`
 
@@ -124,6 +135,20 @@ These tables are already assumed to exist in the beneficiary platform database. 
 | last_login | TIMESTAMPTZ | |
 | two_factor_enabled | BOOLEAN | Default false |
 | two_factor_secret | TEXT | TOTP secret (encrypted) |
+| phone | TEXT | Optional; used for Field Ops SMS alerts |
+
+#### `portal_user_preferences`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | PK |
+| portal_user_id | UUID | FK to portal_users(id), ON DELETE CASCADE |
+| preference_key | TEXT | Default 'notification_preferences'; unique per user with portal_user_id |
+| preference_value | TEXT | JSON string (e.g. notification_preferences object) |
+| created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
+
+Unique constraint on (portal_user_id, preference_key). Index on portal_user_id. See Profile & Settings spec (docs/PROFILE_AND_SETTINGS.md) §8 for JSON schema.
 
 #### `agents`
 
@@ -260,6 +285,39 @@ These tables are already assumed to exist in the beneficiary platform database. 
 | user_agent | TEXT | |
 | created_at | TIMESTAMPTZ | |
 
+#### `duplicate_redemption_events` (Offline duplicate detection)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| voucher_id | UUID | References vouchers(id) |
+| beneficiary_id | UUID | References users(id) |
+| canonical_redemption_ref | TEXT | Reference to the legitimate redemption event (UUID or external id as text) |
+| duplicate_attempt_id | TEXT | Idempotency key from the duplicate device |
+| duplicate_agent_id | UUID | References agents(id) |
+| duplicate_amount | NUMERIC(14,2) | |
+| duplicate_requested_at | TIMESTAMPTZ | Device clock at duplicate attempt |
+| detected_at | TIMESTAMPTZ | |
+| status | TEXT | advance_posted, under_review, no_financial_impact, agent_appealing, resolved |
+| resolution_notes | TEXT | |
+| appeal_evidence_url | TEXT | URL to stored evidence for agent appeal |
+| resolved_by | UUID | References portal_users(id) |
+| resolved_at | TIMESTAMPTZ | |
+
+#### `beneficiary_advances` (Advance recovery ledger)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| beneficiary_id | UUID | References users(id) |
+| source_event_id | UUID | References duplicate_redemption_events(id) |
+| programme_id | UUID | References programmes(id) |
+| original_amount | NUMERIC(14,2) | Amount over-disbursed |
+| recovered_amount | NUMERIC(14,2) | Recovered to date |
+| status | TEXT | outstanding, fully_recovered, escalated |
+| created_at | TIMESTAMPTZ | |
+| last_recovery_at | TIMESTAMPTZ | |
+
 #### `user_sessions` (for app analytics)
 
 | Column | Type | Description |
@@ -312,6 +370,13 @@ All endpoints require authentication (Bearer JWT or mTLS client certificate) and
 | POST | `/auth/2fa/verify` | Verify 2FA token | all |
 | POST | `/auth/password-reset/request` | Request password reset email | public |
 | POST | `/auth/password-reset/confirm` | Reset password with token | public |
+| GET | `/portal/me` | Current portal user (session). Cookie `portal-auth` or `Authorization: Bearer`. Returns `{ id, email, full_name, role, agent_id?, phone? }`. 401 if unauthenticated. | any authenticated |
+| POST | `/auth/change-password` | Change password. Body: `{ current_password, new_password }`. Rate-limited. | any authenticated |
+| GET | `/portal/user/preferences` | Get preferences (e.g. `?key=notification_preferences`). Returns `{ data: { notification_preferences: { ... } } }`. | any authenticated |
+| PATCH | `/portal/user/preferences` | Update preferences. Body: `{ notification_preferences: { ... } }`. | any authenticated |
+
+Full request/response shapes for Profile & Settings (session, password change, notification preferences) are in **docs/PROFILE_AND_SETTINGS.md** §9–10.
+
 | GET | `/portal/users` | List portal users | ketchup_ops |
 | POST | `/portal/users` | Create new portal user | ketchup_ops |
 | GET | `/portal/users/{id}` | Get user details | ketchup_ops |
@@ -399,6 +464,12 @@ All endpoints require authentication (Bearer JWT or mTLS client certificate) and
 | GET | `/ussd/sessions` | List USSD sessions | ketchup_support |
 | GET | `/ussd/sessions/{id}` | Session details | ketchup_support |
 
+#### Ketchup Dashboard Summary
+
+| Method | Endpoint | Description | Roles |
+|--------|----------|-------------|-------|
+| GET | `/portal/dashboard/summary` | KPI counts for dashboard cards: activeVouchers, beneficiariesCount, agentsCount, pendingFloatRequestsCount. Response: `{ data: { activeVouchers, beneficiariesCount, agentsCount, pendingFloatRequestsCount } }`. | ketchup_* |
+
 ### 3.3 Government Portal Endpoints
 
 | Method | Endpoint | Description | Roles |
@@ -441,9 +512,9 @@ All endpoints require authentication (Bearer JWT or mTLS client certificate) and
 | POST | `/field/route` | Generate simple route | field_lead |
 | GET | `/field/reports/activity` | Activity report | field_lead |
 
-### 3.6 Consent & Data Sharing (Future Open Banking)
+### 3.6 Consent & Data Sharing (Out of scope for v1)
 
-If the system evolves to allow third-party access to beneficiary data with consent, we will implement OAuth2 consent flows as per Open Banking standards. For now, all access is role-based within the closed ecosystem.
+Out of scope for v1. Planned for v2: OAuth2 consent flows as per Open Banking standards if the system evolves to allow third-party access to beneficiary data. For now, all access is role-based within the closed ecosystem.
 
 ---
 
@@ -467,6 +538,23 @@ As per Open Banking standards, all API communication between servers (e.g., betw
 ### 4.4 Role-Based Access Control (RBAC)
 
 Permissions are enforced at the API level using middleware that checks the role claim in the JWT against the required roles for each endpoint (see tables above). Row-level security (RLS) in PostgreSQL ensures users can only access data they are permitted to see (e.g., an agent can only see their own data).
+
+#### 4.4.1 RLS policy outline (PRD Audit §3.2)
+
+When enabling RLS on Neon/Postgres, implement policies along these lines (exact SQL in migrations):
+
+| Table | Role | Policy intent |
+|-------|------|----------------|
+| `agents` | agent | SELECT only where `id = current_setting('app.current_agent_id')::uuid` (set by API from session). |
+| `agents` | ketchup_* | SELECT, UPDATE all. |
+| `float_requests` | agent | SELECT, INSERT only where `agent_id = app.current_agent_id`; requested_by = app.current_user_id. |
+| `float_requests` | ketchup_ops, ketchup_finance | SELECT, UPDATE all. |
+| `tasks` | field_tech | SELECT, UPDATE only where `assigned_to = app.current_user_id`. |
+| `tasks` | field_lead | SELECT, INSERT, UPDATE all. |
+| `portal_user_preferences` | all | SELECT, UPDATE only where `portal_user_id = app.current_user_id`. |
+| `audit_logs` | ketchup_* | SELECT all. gov_* SELECT where entity_type/scope is government. |
+
+API routes set session variables (e.g. `SET app.current_user_id = ...`) before running queries, or use a single database role and enforce in application code; RLS then adds a second layer of protection.
 
 ---
 

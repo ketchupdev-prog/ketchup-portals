@@ -2,6 +2,20 @@
 
 Roadmap derived from the PRD, brand guidelines, and common UI patterns. Status: **Done** | **Pending**.
 
+**Implementation:** Portal-specific components (§11) are implemented in their respective portals and wired to **real API endpoints** only—no mocks or placeholder data. Empty states and fallbacks (e.g. "—" when API returns null) are used for display only.
+
+**Task list for pending work:** See **PENDING_COMPONENTS_TASKS.md** for a checklist of all pending components (create + use) with suggested order and locations.
+
+**Extension to all portals:** The components in §1–§9 and §10 (Landing) are the **shared component library**. They are used consistently across:
+- **Landing** (`/`) – §10 Landing Page components (Hero, Overview, Portals, CTA, Footer).
+- **Auth** – Login and Forgot password use **AuthHero** (compact hero with logo, title, subline, “Back to home”, “Choose your portal”), **Card**, **Input**, **IOSButton**; **LandingFooter** via auth layout. Same library as landing and portals. **Each portal has its own login and forgot-password pages** (e.g. `/ketchup/login`, `/agent/forgot-password`). Global `/login` and `/forgot-password` redirect to the portal inferred from `?redirect=`. See **docs/DNS_AND_REDIRECTS.md**.
+- **Header** (all portals) – `BrandLogo` (mark, `ketchup-logo.png`), `UserNav`, `NotificationCenter`, DaisyUI navbar/badge.
+- **Ketchup Sidebar** – `BrandLogo` (mark, `ketchup-logo.png`), DaisyUI menu.
+- **Government Sidebar** – `BrandLogo` (mark, `ketchup-logo.png`), DaisyUI menu.
+- **Agent Sidebar** – `BrandLogo` (mark, `ketchup-logo.png`), DaisyUI menu.
+- **Field Ops Sidebar** – `BrandLogo` (mark, `ketchup-logo.png`), DaisyUI menu.
+- **Portal pages** (Ketchup, Government, Agent, Field Ops) – Use `Button` / `IOSButton`, `Card`, `DataTable`, `MetricCard`, `SectionHeader`, `Container`, `Input`, `Select`, `Modal`, `Toast`, etc. from this inventory. New portal UI must use these primitives; see PRD §2.4 and §28.
+
 ---
 
 ## 1. Utilities & Helpers
@@ -43,20 +57,22 @@ Roadmap derived from the PRD, brand guidelines, and common UI patterns. Status: 
 
 ## 3. Layout & Navigation
 
-| Component | Description | Status |
-|-----------|-------------|--------|
-| `RootLayout` | Top-level layout with providers | Done |
-| `PortalLayout` | Wrapper with dynamic sidebar and header | Done |
-| `Sidebar` (per portal) | Ketchup, Gov, Agent, Field Ops | Done |
-| `Header` | Top bar with user menu, notifications, search | Done |
-| `SidebarNav` | Navigation items list (inside Sidebar) | Done (inline) |
-| `UserNav` | User dropdown with profile, settings, logout | Done |
-| `NotificationBell` | Real-time notifications indicator | Done |
-| `Breadcrumbs` | Hierarchical navigation trail | Done |
-| `Tabs` | Tabbed interface for detail views | Done |
-| `Accordion` | Collapsible sections | Done |
-| `Container` | Max-width centered layout | Done |
-| `Divider` | Horizontal/vertical separator | Done |
+| Component | Description | Used in | Status |
+|-----------|-------------|---------|--------|
+| `RootLayout` | Top-level layout with providers | All pages | Done |
+| `PortalLayout` | Wrapper with dynamic sidebar and header | Ketchup, Government, Agent, Field Ops | Done |
+| `Header` | Top bar: **BrandLogo** (mark, `ketchup-logo.png`), search, portal badge, UserNav, NotificationCenter | All portal routes | Done |
+| `KetchupSidebar` | Nav + **BrandLogo** (mark, `ketchup-logo.png`) | `/ketchup/*` | Done |
+| `GovernmentSidebar` | Nav + **BrandLogo** (mark, `ketchup-logo.png`) | `/government/*` | Done |
+| `AgentSidebar` | Nav + **BrandLogo** (mark, `ketchup-logo.png`) | `/agent/*` | Done |
+| `FieldOpsSidebar` | Nav + **BrandLogo** (mark, `ketchup-logo.png`) | `/field-ops/*` | Done |
+| `UserNav` | User dropdown with profile, settings, logout | Header | Done |
+| `NotificationBell` / `NotificationCenter` | Notifications indicator | Header | Done |
+| `Breadcrumbs` | Hierarchical navigation trail | Detail pages | Done |
+| `Tabs` | Tabbed interface | Detail views | Done |
+| `Accordion` | Collapsible sections | Forms, detail | Done |
+| `Container` | Max-width centered layout | Landing, portal content | Done |
+| `Divider` | Horizontal/vertical separator | Various | Done |
 
 ---
 
@@ -128,8 +144,8 @@ Roadmap derived from the PRD, brand guidelines, and common UI patterns. Status: 
 | `Map` | Base map component | Leaflet | Done |
 | `MarkerCluster` | Clustered markers wrapper | Leaflet | Done |
 | `AssetMarker` | Custom marker for units, ATMs, agents | Leaflet | Done |
-| `LiveLocationMarker` | Real-time updates marker | Pending |
-| `CoverageCircle` | Radius circle around agents | Pending |
+| `LiveLocationMarker` | Real-time updates marker | Leaflet | Done |
+| `CoverageCircle` | Radius circle around agents | Leaflet | Done |
 
 ---
 
@@ -137,12 +153,29 @@ Roadmap derived from the PRD, brand guidelines, and common UI patterns. Status: 
 
 | Component | Description | Status |
 |-----------|-------------|--------|
-| `Carousel` | Image carousel for banners, galleries | Pending |
-| `Lightbox` | Full-screen image viewer | Pending |
+| `Carousel` | Image carousel for banners, galleries | Done |
+| `Lightbox` | Full-screen image viewer | Done |
 
 ---
 
-## 10. Portal-Specific Components
+## 10. Landing Page (Home)
+
+| Component | Description | Uses | Status |
+|-----------|-------------|------|--------|
+| `LandingHero` | Hero: logo, headline, CTAs | IOSButton (pill, shadow, hover lift), Image | Done |
+| `LandingOverview` | Value prop + four benefit cards | Container, Card, CardHeader, CardTitle, CardContent | Done |
+| `LandingPortals` | Four portal entry cards | Container, Card, Badge, Link | Done |
+| `LandingCta` | Bottom CTA strip | Container, IOSButton | Done |
+| `LandingFooter` | Footer: logo, links, copyright | Container, LogoMark | Done |
+| `AuthHero` | Compact hero for sign-in / forgot-password: logo, title, subline, “Back to home”, “Choose your portal” | LogoMark | Done |
+
+**Location:** `src/components/landing/`. Composed in `app/page.tsx`. All sections use the shared UI primitives (IOSButton, Card, Badge, Container, LogoMark) per this inventory.
+
+**Auth (Login & Forgot password):** The sign-in page (`/login`) and forgot-password page (`/forgot-password`) use the same shell: **AuthHero** (branding, headline, links to home and `/#portals`), **Card**, **Input**, **IOSButton**. The auth layout (`(auth)/layout.tsx`) wraps all auth pages with **LandingFooter** so every step shows portal links and “Sign in” / “Choose your portal”. See Extension to all portals above. Each portal has its own auth URLs (e.g. `/ketchup/login`, `/agent/forgot-password`); shared **PortalLoginForm** and **PortalForgotForm**; global `/login` and `/forgot-password` redirect by `?redirect=`. See **docs/DNS_AND_REDIRECTS.md**.
+
+---
+
+## 11. Portal-Specific Components
 
 ### Ketchup Portal
 
@@ -150,56 +183,56 @@ Roadmap derived from the PRD, brand guidelines, and common UI patterns. Status: 
 |-----------|--------|
 | `DashboardCards` | Done |
 | `RecentActivity` | Done |
-| `BeneficiaryTable` | Pending |
-| `BeneficiaryDetail` | Pending |
-| `VoucherTable` | Pending |
-| `VoucherIssueForm` | Pending |
-| `AgentTable` | Pending |
-| `AgentDetail` | Pending |
-| `TerminalInventory` | Pending |
-| `MobileUnitMap` | Pending |
-| `MobileUnitDetail` | Pending |
-| `TrustReconciliation` | Pending |
-| `AuditLogTable` | Pending |
-| `UnverifiedBeneficiaries` | Pending |
-| `NetworkMap` | Pending |
-| `AppAnalytics` | Pending |
-| `USSDViewer` | Pending |
+| `BeneficiaryTable` | Done |
+| `BeneficiaryDetail` | Done |
+| `VoucherTable` | Done |
+| `VoucherIssueForm` | Done |
+| `AgentTable` | Done |
+| `AgentDetail` | Done |
+| `TerminalInventory` | Done |
+| `MobileUnitMap` | Done |
+| `MobileUnitDetail` | Done |
+| `TrustReconciliation` | Done |
+| `AuditLogTable` | Done |
+| `UnverifiedBeneficiaries` | Done |
+| `NetworkMap` | Done |
+| `AppAnalytics` | Done |
+| `USSDViewer` | Done |
 
 ### Government Portal
 
 | Component | Status |
 |-----------|--------|
-| `ProgrammeDashboard` | Pending |
-| `UnverifiedList` | Pending |
-| `VoucherMonitor` | Pending |
-| `AuditReportGenerator` | Pending |
-| `ProgrammeForm` | Pending |
+| `ProgrammeDashboard` | Done |
+| `UnverifiedList` | Done |
+| `VoucherMonitor` | Done |
+| `AuditReportGenerator` | Done |
+| `ProgrammeForm` | Done |
 
 ### Agent Portal
 
 | Component | Status |
 |-----------|--------|
-| `AgentDashboard` | Pending |
-| `FloatHistory` | Pending |
-| `FloatRequestForm` | Pending |
-| `TransactionHistory` | Pending |
-| `ParcelList` | Pending |
-| `ParcelScan` | Pending |
-| `CommissionStatement` | Pending |
+| `AgentDashboard` | Done |
+| `FloatHistory` | Done |
+| `FloatRequestForm` | Done |
+| `TransactionHistory` | Done |
+| `ParcelList` | Done |
+| `ParcelScan` | Done |
+| `CommissionStatement` | Done |
 
 ### Field Ops Portal
 
 | Component | Status |
 |-----------|--------|
-| `FieldMap` | Pending |
-| `AssetList` | Pending |
-| `AssetDetail` | Pending |
-| `TaskList` | Pending |
-| `TaskForm` | Pending |
-| `MaintenanceLogForm` | Pending |
-| `RoutePlanner` | Pending |
-| `ActivityReport` | Pending |
+| `FieldMap` | Map with units, ATMs, live positions, coverage circles | Done |
+| `AssetList` | Done |
+| `AssetDetail` | Done |
+| `TaskList` | Task table + create/mark-done modals; used on field-ops/tasks | Done |
+| `TaskForm` | Done |
+| `MaintenanceLogForm` | Done |
+| `RoutePlanner` | Done |
+| `ActivityReport` | Done |
 
 ---
 

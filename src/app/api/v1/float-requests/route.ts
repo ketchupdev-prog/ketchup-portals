@@ -1,6 +1,7 @@
 /**
  * GET /api/v1/float-requests – List float requests for Ketchup review.
  * Query: status (pending | approved | rejected), agent_id, page, limit.
+ * RBAC: ketchup_ops, ketchup_finance only (PRD §20).
  */
 
 import { NextRequest } from "next/server";
@@ -8,11 +9,16 @@ import { db } from "@/lib/db";
 import { floatRequests, agents } from "@/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { parsePagination, paginationLinks, jsonPaginated, jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
 
 const basePath = "/api/v1/float-requests";
+const ROUTE = "GET /api/v1/float-requests";
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requirePermission(request, "float_requests.list", ROUTE);
+    if (auth) return auth;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");
@@ -30,6 +36,7 @@ export async function GET(request: NextRequest) {
         amount: floatRequests.amount,
         status: floatRequests.status,
         requestedAt: floatRequests.requestedAt,
+        requestedBy: floatRequests.requestedBy,
         reviewedBy: floatRequests.reviewedBy,
         reviewedAt: floatRequests.reviewedAt,
         agentName: agents.name,
@@ -60,6 +67,7 @@ export async function GET(request: NextRequest) {
       amount: r.amount,
       status: r.status,
       requested_at: r.requestedAt?.toISOString() ?? null,
+      requested_by: r.requestedBy ?? null,
       reviewed_by: r.reviewedBy ?? null,
       reviewed_at: r.reviewedAt?.toISOString() ?? null,
     }));

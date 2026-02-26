@@ -7,12 +7,17 @@
   --foreground: #1a1a1a;
 }
 
-/* Override DaisyUI light theme for stronger contrast (base-content darker; no faint table headers) */
+/* Override DaisyUI light theme for stronger contrast (base-content darker; no faint table headers).
+ * Use Ketchup brand primary (Forest #226644) instead of default purple so btn-primary, link-primary,
+ * text-primary, ring-primary are consistent with logo and rest of app. */
 [data-theme="light"] {
   --color-base-content: oklch(18% 0.008 285);
   --color-base-200: oklch(97% 0.006 285);
   --color-base-300: oklch(93% 0.008 285);
   --color-content-muted: oklch(42% 0.02 285);
+  /* Ketchup Forest – primary brand green (Appendix C); replaces default purple */
+  --color-primary: #226644;
+  --color-primary-content: #ffffff;
 }
 
 @theme inline {
@@ -20,6 +25,9 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Ketchup brand (Appendix C) – use for primary UI and consistency with logo */
+  --ketchup-forest: #226644;
+  --ketchup-forest-dark: #1a4d33;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -71,4 +79,27 @@ body {
 }
 .scheduler.rbc-override .rbc-header {
   padding: 0.5rem;
+}
+
+/* LiveLocationMarker – map marker with pulse for real-time tracking */
+.live-marker-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: oklch(0.45 0.2 265);
+  border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+.live-marker-pulse {
+  animation: live-marker-pulse 1.5s ease-in-out infinite;
+}
+@keyframes live-marker-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.85; }
 }

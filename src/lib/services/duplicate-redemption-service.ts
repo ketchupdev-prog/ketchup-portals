@@ -13,7 +13,7 @@ import {
   vouchers,
   programmes,
 } from "@/db/schema";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, ilike } from "drizzle-orm";
 
 export type DuplicateEventStatus =
   | "advance_posted"
@@ -25,6 +25,7 @@ export type DuplicateEventStatus =
 export type ListDuplicateEventsFilters = {
   status?: DuplicateEventStatus;
   programmeId?: string;
+  region?: string;
   from?: string;
   to?: string;
 };
@@ -64,6 +65,8 @@ export async function listDuplicateEvents(
   const conditions = [];
   if (filters?.status)
     conditions.push(eq(duplicateRedemptionEvents.status, filters.status));
+  if (filters?.region)
+    conditions.push(ilike(users.region, `%${filters.region}%`));
   if (filters?.from)
     conditions.push(
       gte(duplicateRedemptionEvents.detectedAt, new Date(filters.from))
@@ -122,11 +125,18 @@ export async function listDuplicateEvents(
         .orderBy(desc(duplicateRedemptionEvents.detectedAt))
         .limit(limit)
         .offset(offset),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(duplicateRedemptionEvents)
-        .innerJoin(vouchers, eq(duplicateRedemptionEvents.voucherId, vouchers.id))
-        .where(programmeWhere),
+      filters?.region
+        ? db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(duplicateRedemptionEvents)
+            .innerJoin(vouchers, eq(duplicateRedemptionEvents.voucherId, vouchers.id))
+            .leftJoin(users, eq(duplicateRedemptionEvents.beneficiaryId, users.id))
+            .where(programmeWhere)
+        : db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(duplicateRedemptionEvents)
+            .innerJoin(vouchers, eq(duplicateRedemptionEvents.voucherId, vouchers.id))
+            .where(programmeWhere),
     ]);
     rows = r;
     totalRecords = c[0]?.count ?? 0;
@@ -155,10 +165,16 @@ export async function listDuplicateEvents(
         .orderBy(desc(duplicateRedemptionEvents.detectedAt))
         .limit(limit)
         .offset(offset),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(duplicateRedemptionEvents)
-        .where(whereClause),
+      filters?.region
+        ? db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(duplicateRedemptionEvents)
+            .leftJoin(users, eq(duplicateRedemptionEvents.beneficiaryId, users.id))
+            .where(whereClause)
+        : db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(duplicateRedemptionEvents)
+            .where(whereClause),
     ]);
     rows = r;
     totalRecords = c[0]?.count ?? 0;

@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { portalFetch } from '@/lib/portal-fetch';
 import { SectionHeader } from '@/components/ui/section-header';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -43,7 +44,7 @@ export default function FloatRequestsPage() {
     try {
       const params = new URLSearchParams({ page: '1', limit: '50' });
       if (statusFilter) params.set('status', statusFilter);
-      const res = await fetch(`/api/v1/float-requests?${params.toString()}`);
+      const res = await portalFetch(`/api/v1/float-requests?${params.toString()}`);
       const json = await res.json();
       if (res.ok) setData(json.data ?? []);
       else addToast(json.error ?? 'Failed to load', 'error');
@@ -61,7 +62,7 @@ export default function FloatRequestsPage() {
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
     setActingId(id);
     try {
-      const res = await fetch(`/api/v1/agent/float/request/${id}`, {
+      const res = await portalFetch(`/api/v1/agent/float/request/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),

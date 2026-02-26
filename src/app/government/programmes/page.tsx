@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { portalFetch } from '@/lib/portal-fetch';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SearchHeader } from '@/components/ui/search-header';
 import { DataTable } from '@/components/ui/data-table';
@@ -49,7 +50,7 @@ export default function GovernmentProgrammesPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/programmes?page=1&limit=100')
+    portalFetch('/api/v1/programmes?page=1&limit=100')
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -64,7 +65,7 @@ export default function GovernmentProgrammesPage() {
   const handleCreate = async () => {
     if (!name.trim()) { addToast('Enter programme name.', 'error'); return; }
     try {
-      const res = await fetch('/api/v1/programmes', {
+      const res = await portalFetch('/api/v1/programmes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,7 +81,7 @@ export default function GovernmentProgrammesPage() {
       setModalOpen(false);
       setName(''); setBudget(''); setStart(''); setEnd(''); setVerificationDays('90');
       addToast('Programme created.', 'success');
-      const listRes = await fetch('/api/v1/programmes?page=1&limit=100');
+      const listRes = await portalFetch('/api/v1/programmes?page=1&limit=100');
       const listJson = await listRes.json();
       if (listJson.data && Array.isArray(listJson.data)) setData(listJson.data.map(mapApiToRow));
     } catch { addToast('Failed to create programme.', 'error'); }

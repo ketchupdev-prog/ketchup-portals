@@ -39,6 +39,8 @@ export const serverEnvSchema = z.object({
   NEON_AUTH_COOKIE_SECRET: z.string().optional(),
   /** Optional: Neon Auth – client-side auth URL (same as NEON_AUTH_BASE_URL; NEXT_PUBLIC_ for client). */
   NEXT_PUBLIC_NEON_AUTH_URL: z.string().url().optional().or(z.literal("")),
+  /** Optional: Float amount (NAD) above which two approvals are required. Default 50000. PRD Audit §1.6. */
+  DUAL_CONTROL_FLOAT_THRESHOLD_NAD: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -71,6 +73,7 @@ export function getServerEnv(): ServerEnv {
     NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
     NEON_AUTH_COOKIE_SECRET: process.env.NEON_AUTH_COOKIE_SECRET,
     NEXT_PUBLIC_NEON_AUTH_URL: process.env.NEXT_PUBLIC_NEON_AUTH_URL,
+    DUAL_CONTROL_FLOAT_THRESHOLD_NAD: process.env.DUAL_CONTROL_FLOAT_THRESHOLD_NAD,
   });
   if (!parsed.success) {
     const first = parsed.error.issues[0];

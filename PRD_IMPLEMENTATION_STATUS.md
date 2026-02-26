@@ -1,8 +1,8 @@
 # Ketchup Portals – PRD Implementation Status
 
-**Reference:** `KETCHUP_PORTALS_PRD.md` (v1.3)  
+**Reference:** `KETCHUP_PORTALS_PRD.md` (v1.4.1)  
 **Last checked:** Against current codebase (routes, components, pages).  
-**Updated:** Offline Redemption Integrity (§3.2.11); §7.4 Notifications & Outbound Communications (SMS, email, push) added to PRD; implementation status below.
+**Updated:** Offline Redemption Integrity (§3.2.11); §7.4 Notifications; **14 regions (Namibia)** single source of truth (`src/lib/regions.ts`) for all region filters and API validation; **notification preferences applied** when sending SMS (float approve/reject, task assigned) per `portal_user_preferences`.
 
 ---
 
@@ -28,7 +28,7 @@
 | PRD Section | What exists |
 |-------------|-------------|
 | **§3.2.1 Dashboard** | KPI-style cards (DrillDownCard), DashboardCards, RecentActivity. **Counts from API** (beneficiaries, vouchers, agents, active vouchers) via `KetchupDashboard` client component. |
-| **§3.2.2 Beneficiary list** | List with filters (region, verification, wallet, programme), columns (name, phone, region, last proof-of-life, wallet status), Export CSV, Send SMS reminder (confirm + toast). **Filters persisted in URL** (?region=, status=, verification=). |
+| **§3.2.2 Beneficiary list** | List with filters (region, verification, wallet, programme), columns (name, phone, region, last proof-of-life, wallet status), Export CSV, Send SMS reminder (confirm + toast). **Filters persisted in URL** (?region=, status=, verification=). **Region filter uses all 14 Namibian regions** from `src/lib/regions.ts`. |
 | **§3.2.2 Beneficiary detail** | DetailLayout with tabs: Information, Vouchers (table), Transactions (table), Proof of Life (timeline). **Data from API** via `lib/data/beneficiary.ts` (getBeneficiary, getBeneficiaryVouchers, getBeneficiaryTransactions, getProofOfLifeEvents); 404 when not found. |
 | **§3.2.3 Voucher list** | Filters (status, programme), columns (ID, amount, programme, beneficiary, status, expiry, issued), row click to detail. |
 | **§3.2.3 Issue Voucher** | Modal: Single (beneficiary search + amount) and Batch (CSV upload, preview). Toasts on submit. |
@@ -129,8 +129,8 @@
 
 | PRD Section | Status |
 |-------------|--------|
-| **§7.1 Authentication & Authorization** | Middleware added (redirect when NEXT_PUBLIC_REQUIRE_AUTH=true and no auth cookie). Login/register UI only; Supabase and 2FA not wired. |
-| **§7.4 Notifications & §7.4.1 Outbound Communications** | **SMS:** Implemented – `sms_queue` table, `users.sms_opt_out`, `src/lib/services/sms.ts`; APIs: POST `/api/v1/beneficiaries/[id]/sms`, POST `/api/v1/beneficiaries/bulk-sms`, GET `/api/v1/sms/history`, POST `/api/v1/sms/process` (cron), webhooks for delivery/STOP. UI: bulk SMS and “Trigger proof-of-life” from Ketchup. **Email:** Not implemented – no SMTP send for password reset, portal user onboarding, or reports. **Push:** Not implemented – no push subscription or outbound push to beneficiaries/field ops. **In-app notification center** in header not built; Supabase Realtime not used. **Implemented this round:** In-app notifications (table, GET/PATCH API, NotificationCenter in header); SMS to agents (float approve/reject) and field ops (task assigned, `portal_users.phone`); email service (`sendEmail` + SMTP env); push (subscribe API, `sendPushToPortalUser`/`sendPushToBeneficiary`). See migration `0002_communications.sql`. |
+| **§7.1 Authentication & Authorization** | **Portal auth:** Cookie-based session (`portal-auth`) set by `POST /api/v1/auth/login`; `getPortalSession()` in API routes. **RBAC:** Configurable roles/permissions in DB; `requirePermission` / `requireAnyPermission` protect portal and admin endpoints (e.g. `dashboard.summary`, `admin.manage_roles`, `float_requests.approve`). Admin APIs: GET/PUT roles, GET permissions, GET/PATCH users (role assignment). Ketchup dashboard redirects to `/login?redirect=...` on 401. Supabase and 2FA not wired. |
+| **§7.4 Notifications & §7.4.1 Outbound Communications** | **SMS:** Implemented – `sms_queue` table, `users.sms_opt_out`, `src/lib/services/sms.ts`; APIs: POST `/api/v1/beneficiaries/[id]/sms`, POST `/api/v1/beneficiaries/bulk-sms`, GET `/api/v1/sms/history`, POST `/api/v1/sms/process` (cron), webhooks for delivery/STOP. UI: bulk SMS and “Trigger proof-of-life” from Ketchup. **Email:** Not implemented – no SMTP send for password reset, portal user onboarding, or reports. **Push:** Not implemented – no push subscription or outbound push to beneficiaries/field ops. **In-app notification center** in header not built; Supabase Realtime not used. **Implemented this round:** In-app notifications (table, GET/PATCH API, NotificationCenter in header); SMS to agents (float approve/reject) and field ops (task assigned, `portal_users.phone`); email service (`sendEmail` + SMTP env); push (subscribe API, `sendPushToPortalUser`/`sendPushToBeneficiary`). See migration `0002_communications.sql`. **v1.4.1:** Float/task-assigned SMS gated by `portal_user_preferences` via `src/lib/services/notification-preferences.ts`. |
 | **§7.5 Audit Logging** | PRD: all actions logged to DB. Current: audit log **UI** only; no backend logging. |
 | **§7.6 Search & Filter** | Global search not implemented. Advanced filters exist on some Ketchup lists; **URL state for beneficiaries list** (region, status, verification) implemented via `useSearchParams` and `router.replace`. |
 | **§7.3 PDF** | PRD: reports as PDF (e.g. Government audit exports). Not implemented. |
@@ -143,7 +143,7 @@
 |-----|--------|
 | **Next.js 14 App Router** | ✅ Used. |
 | **Supabase Auth** | ❌ Not integrated; login is UI only. |
-| **Neon (PostgreSQL)** | ✅ **Drizzle schema** in `src/db/schema.ts` (all tables + `incidents`; **Offline Redemption Integrity**: `duplicate_redemption_events`, `beneficiary_advances`, `advance_recovery_transactions`); **`src/lib/db.ts`** lazy Neon HTTP + Drizzle; **`drizzle.config.ts`** (loads `.env.local`, `drizzle-kit generate` / `push`). **Migration** `drizzle/0001_duplicate_redemptions.sql` for duplicate-redemption tables. **`docs/NEON_SETUP.md`** for connection string and Neon docs. Set `DATABASE_URL` for build/runtime. |
+| **Neon (PostgreSQL)** | ✅ **Drizzle schema** in `src/db/schema.ts` (all tables + `incidents`; **Offline Redemption Integrity**: `duplicate_redemption_events` with `canonical_redemption_ref` (TEXT), `beneficiary_advances`, `advance_recovery_transactions`); **`src/lib/db.ts`** lazy Neon HTTP + Drizzle; **`drizzle.config.ts`** (loads `.env.local`, `drizzle-kit generate` / `push`). **Migrations:** `drizzle/0000_initial.sql` … `0006_canonical_redemption_ref.sql` – run with `npm run db:migrate` or `node scripts/apply-0005-0006.mjs` if DB is behind. **`docs/NEON_SETUP.md`** for connection string and Neon docs. Set `DATABASE_URL` for build/runtime. |
 | **API routes** | ✅ **Full `/api/v1`**: auth (login); beneficiaries (list, [id], unverified, **[id]/advance-ledger**); vouchers (list, [id], **[id]/status**, issue, expiring-soon, **duplicates**, **duplicates/[id]**); agents (list, [id], float, float-history, transactions); terminals (list, [id]/assign, [id]/status); assets (list, [id], maintenance, maintenance-logs, location, map); reconciliation (daily, adjustment); audit-logs; incidents (list, [id]); analytics (app-users, dau, redemption-rate, channel-breakdown, heatmap); ussd/sessions, sessions/[id]; programmes (list, [id], [id]/report); **advance-ledger/summary**; agent/* (dashboard, float, float/history, float/request, transactions, parcels, parcels/[id]/collect, commission, settlement); field/* (map, assets, assets/[id], assets/[id]/location, maintenance, tasks, tasks/[id], route, reports/activity). Shared `src/lib/api-response.ts`. |
 | **Middleware** | ✅ Optional redirect to `/login` when `NEXT_PUBLIC_REQUIRE_AUTH=true` and no auth cookie. |
 | **File Storage (Supabase Storage)** | ❌ Not used. |
@@ -166,7 +166,7 @@
 | **§17 Environment Variables** | No `.env` usage for Supabase/Neon. |
 | **§18 Deployment** | Not specified in codebase. |
 | **§19 Error Handling & Loading States** | Some loading/empty states in tables; no global error boundary. **Structured logging** for API errors (logger + jsonError with route on 5xx). |
-| **§20 Permissions Matrix** | Not enforced (no auth). |
+| **§20 Permissions Matrix** | **Implemented:** Permission-based RBAC via `requirePermission`/`requireAnyPermission`; roles and permissions in DB; admin APIs to manage roles and assign users; dashboard/summary, float, admin endpoints protected. See `src/lib/permissions.ts`, `src/lib/require-permission.ts`, `docs/PRD_AUDIT_REPORT_v1.4.1.md`. |
 | **§21 API Pagination, Filtering & Validation** | ✅ List endpoints use `page`, `limit`, `meta`, `links`; filters via query params; validation and error shape in `src/lib/api-response.ts`. |
 | **§22 Testing Strategy** | No tests in repo. |
 | **§23 Monitoring & Logging** | Not implemented. |
@@ -177,7 +177,7 @@
 
 ## 8. What to do next (priority)
 
-1. **Auth & RBAC** – Wire Supabase Auth to `/api/v1/auth/login` and JWT; enforce RBAC on `/api/v1` by role. Optional: OpenAPI 3.1 YAML.
+1. **Auth & RBAC** – **Done:** Portal cookie auth (`portal-auth`), `getPortalSession`, `requirePermission`/`requireAnyPermission`; admin APIs for roles/permissions and user role assignment; dashboard and float routes protected by permission slugs. Optional: OpenAPI 3.1 YAML, 2FA for sensitive roles.
 2. **Government Portal** – Done: programmes, unverified, vouchers wired; `/api/v1/programmes`, `/api/v1/beneficiaries/unverified`, `/api/v1/vouchers`; **Duplicate Redemption Metrics** on vouchers page (advance-ledger/summary); audit export (PDF).
 3. **Offline Redemption Integrity (§3.2.11, §3.3.11)** – **Done:** Schema (3 tables), migration `0001_duplicate_redemptions.sql`, `duplicate-redemption-service.ts`, GET voucher status, GET/PATCH duplicate-redemptions, GET advance-ledger, GET advance-ledger/summary; Ketchup Duplicate Redemptions page, Advance Ledger tab on beneficiary detail, Government vouchers duplicate metrics. Optional: POST advance-recovery, agent float clawback, notifications (SMS/email on duplicate detection).
 4. **Agent Portal** – Done: dashboard, float, parcels wired (demo agent_id); transaction history, parcel list/scan.

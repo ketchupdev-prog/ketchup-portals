@@ -8,6 +8,7 @@
 
 import { useState, useMemo, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { portalFetch } from '@/lib/portal-fetch';
 import { BeneficiaryTable, type BeneficiaryRow } from '@/components/ketchup/beneficiary-table';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
@@ -66,7 +67,7 @@ function BeneficiariesListContent() {
     params.set('limit', '100');
     if (regionFilter) params.set('region', regionFilter);
     if (walletFilter) params.set('status', walletFilter);
-    fetch(`/api/v1/beneficiaries?${params.toString()}`)
+    portalFetch(`/api/v1/beneficiaries?${params.toString()}`)
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -107,7 +108,7 @@ function BeneficiariesListContent() {
       return;
     }
     try {
-      const res = await fetch('/api/v1/beneficiaries/bulk-sms', {
+      const res = await portalFetch('/api/v1/beneficiaries/bulk-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

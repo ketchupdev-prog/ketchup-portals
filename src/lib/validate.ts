@@ -42,6 +42,10 @@ export const schemas = {
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   }),
+  changePassword: z.object({
+    current_password: z.string().min(1, "Current password is required"),
+    new_password: z.string().min(8, "New password must be at least 8 characters"),
+  }),
 };
 
 export type ValidationResult<T> =

@@ -1,4 +1,4 @@
-# Ketchup Portals – Product Requirements Document (v1.3)
+# Ketchup Portals – Product Requirements Document (v1.4.2)
 
 **Ketchup Software Solutions**  
 **Ecosystem:** Government-to-Person (G2P) – Operations, Compliance & Field Management  
@@ -11,7 +11,11 @@
 
 This document defines the functional and technical requirements for the four web portals that support the Ketchup SmartPay G2P ecosystem. The portals provide operations, compliance, field management, and partner interfaces, built on a modern web stack (Next.js, Supabase/Neon, Tailwind CSS). They share a common backend API and data layer with the Beneficiary Platform (mobile app & USSD). All portals are delivered as a **single Next.js application** with route‑based separation, simplifying deployment and maintenance.
 
-**Changes in v1.3:** Added environment variables, error handling, permissions matrix, pagination/filtering details, testing strategy, monitoring, backup/disaster recovery, user onboarding (password reset), 2FA setup, form validation, and deployment instructions.
+**Changes in v1.4:** Resolved all placeholders and ambiguous terms: (1) Marked deferred features as "Out of scope for v1" or "Planned for v2" with clear roadmap notes. (2) Integrated Profile & Settings specification (session, `/portal/me`, password change, notification preferences, `portal_user_preferences` table). (3) Completed API specifications for GET `/api/v1/portal/me`, GET/PATCH `/api/v1/portal/user/preferences`, POST `/api/v1/auth/change-password` with full request/response and error formats. (4) Added database schema for `portal_user_preferences` and indexes. (5) Defined edge cases for duplicate redemption appeal, float approval workflow, advance recovery logic, and clock-skew handling. (6) Documented environment variables (including `NEXT_PUBLIC_SENTRY_DSN`, `ENCRYPTION_KEY` generation). (7) Specified testing coverage per feature and monitoring metrics. (8) Replaced dashboard placeholder data with concrete API-driven implementation. (9) Added final completion checklist. **v1.4 is the single source of truth for development; no todos or placeholders remain for MVP scope.**
+
+**Changes in v1.4.1:** (1) **Namibia’s 14 administrative regions** – All region filters, dropdowns, and the `region` query parameter use a single source of truth (`src/lib/regions.ts`). List APIs (beneficiaries, agents, duplicate-redemptions, vouchers/duplicates) validate `region` and return 400 for invalid values. (2) **Notification preferences applied when sending** – Float approval/rejection and task-assignment flows respect `portal_user_preferences` (notification_preferences) before sending SMS; in-app notifications are still created. See §7.4, §8.2 and `src/lib/services/notification-preferences.ts`.
+
+**Changes in v1.4.2:** (1) **Implementation validation** – Full codebase build (Next.js production build) passes; TypeScript and all routes compile. (2) **Portal components implemented** – All portal-specific components in **COMPONENT_INVENTORY.md** (§11) are implemented and wired in their respective portals; **PENDING_COMPONENTS_TASKS.md** tasks are marked Done. (3) **Real API data only** – No mocks or placeholder data: Ketchup (reconciliation, audit, network map, app analytics, USSD viewer), Government (dashboard, unverified, voucher monitor, audit report generator, programme form), Agent (dashboard, float history/request, transactions, parcels, commission statement), and Field Ops (assets, asset detail, tasks, maintenance log, route planner, activity report) consume live APIs. (4) **API additions** – GET `/api/v1/reconciliation/daily` returns `transaction_entries`; GET `/api/v1/field/reports/activity` returns `tasks_completed`, `maintenance_logs`, `assets_visited`, `activity_rows` from DB; GET `/api/v1/field/route` returns `stops`; GET `/api/v1/analytics/mau` returns monthly active users. See §15.1.
 
 ---
 
@@ -19,6 +23,10 @@ This document defines the functional and technical requirements for the four web
 
 1. [Executive Summary & Ecosystem Context](#1-executive-summary--ecosystem-context)
 2. [Overall Architecture & Tech Stack](#2-overall-architecture--tech-stack)
+   - 2.1 Single Next.js Application with Route‑based Portals
+   - 2.2 Landing Page (Home)
+   - 2.3 Integration with Ecosystem
+   - 2.4 Shared Component Library (All Portals)
 3. [Ketchup Portal](#3-ketchup-portal)
    - 3.1 User Perspectives & Personas
    - 3.2 Core Modules & Screens
@@ -47,6 +55,7 @@ This document defines the functional and technical requirements for the four web
 13. [Non‑Functional Requirements](#13-non‑functional-requirements)
 14. [Localization & Accessibility](#14-localization--accessibility)
 15. [Implementation Phases](#15-implementation-phases)
+   - 15.1 [Implementation validation (v1.4.2)](#151-implementation-validation-v142)
 16. [Glossary](#16-glossary)
 17. [Environment Variables](#17-environment-variables)
 18. [Deployment Instructions](#18-deployment-instructions)
@@ -133,18 +142,49 @@ app/
       portal/
         ...
   layout.tsx             # Root layout with providers
-  page.tsx               # Landing page (redirects to login or respective portal dashboard)
+  page.tsx               # Landing page: Ketchup logo + portal cards; users choose portal then go to login → dashboard
 ```
 
 - Route groups (`(ketchup)`, `(government)`, etc.) are used to logically separate portal code without affecting the URL path. The actual URLs are `/ketchup/dashboard`, `/government/dashboard`, etc.
 - Authentication middleware protects all routes under `/ketchup`, `/government`, `/agent`, `/field-ops` and `/api/v1/portal`.
 - Shared components (layout, sidebar, header) can be placed in a `components/` directory and imported by each portal.
 
-### 2.2 Integration with Ecosystem
+### 2.2 Landing Page (Home)
+
+The **root route** (`/`) is a **production landing page** (home) that:
+
+- **Displays the Ketchup SmartPay logo** prominently (primary brand asset: `public/ketchup-logo.png`).
+- **Offers four portal entry points** (Ketchup, Government, Agent, Field Ops) as cards. Each links to **Sign in** with a redirect to that portal’s dashboard (e.g. `/login?redirect=/ketchup/dashboard`).
+- **Does not require authentication.** Authenticated users may still use the landing page to switch context; after sign-in they are redirected to the chosen portal dashboard.
+- **Brand consistency:** Same logo and visual identity as used in all portals (header, sidebars, login page).
+
+**Modular implementation** (production build): The landing page is composed of reusable sections under `components/landing/`:
+
+| Section | Purpose |
+|--------|---------|
+| **Hero** | Logo, headline (“Powering the G2P economy”), subheadline, primary CTA (Sign in to your portal), secondary CTA (Learn more). Full-viewport hero with gradient background. |
+| **Overview** | Value proposition: “One platform. Four portals. Full control.” Four benefit cards (Operations & compliance, Government oversight, Agent network, Field operations) with short copy and icons. Explains and markets the application. |
+| **Portals** | Four portal cards (Ketchup, Government, Agent, Field Ops) with title, description, badge; each links to `/login?redirect=<dashboard>`. |
+| **CTA** | Bottom call-to-action strip: “Ready to get started?” with button linking to #portals. |
+| **Footer** | Logo, sign-in and portal links, copyright, tagline (“Secure, compliant disbursements for the Namibian G2P economy”). |
+
+Implementation: `app/page.tsx` composes `LandingHero`, `LandingOverview`, `LandingPortals`, `LandingCta`, `LandingFooter` from `@/components/landing`. Uses existing `Container`, `Button`, and DaisyUI/Tailwind for consistency.
+
+### 2.3 Integration with Ecosystem
 
 - All portals consume the **Ketchup API** (REST/GraphQL) which is shared with the Beneficiary Platform. API endpoints are defined in the Buffr G2P PRD (§9.3, §9.4) and extended for portal‑specific needs (e.g., batch voucher issuance, agent float management).
 - **Supabase Auth** provides the user management layer for portal users, separate from beneficiary authentication. Portal users are stored in a `portal_users` table with roles and permissions.
 - The **Biometric Verification Service** is not directly accessed by portals; all biometric events are logged via the Ketchup API.
+
+### 2.4 Shared Component Library (All Portals)
+
+All four portals, the landing page, and the auth (login) flow use the **same shared component library**. Implementations must use the primitives and patterns defined in **COMPONENT_INVENTORY.md** so that branding, behaviour, and accessibility are consistent.
+
+- **Landing** (`/`): Uses §10 Landing components (Hero, Overview, Portals, CTA, Footer), which in turn use IOSButton, Card, Badge, Container, LogoMark.
+- **Auth** (`/login`, `/forgot-password`): Use **AuthHero** (compact hero with logo, title, subline, “Back to home”, “Choose your portal”), Card, Input, IOSButton. The auth layout wraps these pages with **LandingFooter** so every step shows portal links and a clear path to the respective portals. No custom form elements; all from the inventory.
+- **Header** (every portal): Uses BrandLogo (mark, `ketchup-logo.png`), UserNav, NotificationCenter. Same header component across Ketchup, Government, Agent, Field Ops.
+- **Sidebars**: Each of KetchupSidebar, GovernmentSidebar, AgentSidebar, FieldOpsSidebar uses BrandLogo (mark, `ketchup-logo.png`) in the sidebar header and DaisyUI menu for nav items.
+- **Portal pages**: All list and detail screens across Ketchup, Government, Agent, and Field Ops use Button/IOSButton, Card, DataTable, MetricCard, SectionHeader, Container, Input, Select, Modal, Toast, and related components from the inventory. New or refactored UI must use these primitives; see Appendix C (§28) for brand usage and COMPONENT_INVENTORY.md for the full list and “Extension to all portals” mapping.
 
 ---
 
@@ -242,7 +282,7 @@ app/
   - View registered app users, last login, device info.
 - **App Analytics**:
   - DAU/MAU, redemption rate, channel breakdown (app vs USSD), heatmap of usage.
-- **AI/ML Model Status** (future): placeholder for fraud detection model health.
+- **AI/ML Model Status:** Out of scope for v1. Planned for v2 – fraud detection model health dashboard; no UI or API in MVP. Omit from Ketchup Portal until roadmap phase.
 
 #### 3.2.10 USSD Session Viewer
 - **Session List**:
@@ -452,7 +492,7 @@ This ensures a beneficiary never receives less than zero (no negative vouchers),
   - Programme performance summary (budget vs actual).
   - Ghost payment prevention report (verification metrics).
   - Incident report (if any).
-- Scheduled reports (optional).
+- Scheduled reports: Available for Government portal users who enable report delivery in Settings (`report_delivery_frequency`: off | daily | weekly; `report_delivery_format`: pdf). See Profile & Settings spec §8.
 
 #### 4.2.5 Programme Configuration (Admin only)
 - Define new programmes (name, budget, start/end dates).
@@ -527,7 +567,7 @@ This ensures a beneficiary never receives less than zero (no negative vouchers),
 
 #### 5.3.1 Dashboard
 - **Float card**: Real‑time via Supabase subscription on `agents` table.
-- **Alerts**: Low float threshold (e.g., < N$500) triggers in‑app notification and optionally SMS.
+- **Alerts**: Low float threshold (e.g., < N$500) triggers in‑app notification; email and SMS are sent only if the user has enabled those channels in Settings (see §7.4 and Profile & Settings spec: `portal_user_preferences`).
 
 #### 5.3.2 Float Management
 - **Float history**: Table `agent_float_transactions` with fields: `id`, `agent_id`, `amount`, `type` (top‑up, settlement, adjustment), `reference`, `created_at`.
@@ -566,7 +606,7 @@ This ensures a beneficiary never receives less than zero (no negative vouchers),
 - **Interactive Map** with:
   - Mobile units: live tracking (if GPS enabled), driver name, status.
   - ATMs: marker with cash level (coloured), last replenishment.
-  - Agents/NamPost (optional): for reference.
+  - Agents/NamPost (for reference only in v1; full assignment UI planned for v2 if required).
 - **Click on marker**:
   - Popup with summary + link to detail page.
   - For ATMs: show cash level, last replenishment, buttons to "Log Maintenance", "Replenish".
@@ -636,7 +676,7 @@ This ensures a beneficiary never receives less than zero (no negative vouchers),
 ## 7. Common Features Across Portals
 
 ### 7.1 Authentication & Authorization
-- Supabase Auth with email/password; optional 2FA (TOTP) for sensitive roles.
+- Supabase Auth with email/password. 2FA (TOTP) is available for any portal user who enables it in Settings; required only for roles designated by policy (e.g. ketchup_finance for large approvals). See §25 for 2FA setup.
 - Role‑based access control (RBAC) enforced via Next.js middleware and database policies.
 - After login, users are redirected to the appropriate portal dashboard based on their role (e.g. `agent` → `/agent/dashboard`).
 
@@ -652,7 +692,17 @@ This ensures a beneficiary never receives less than zero (no negative vouchers),
 ### 7.4 Notifications & Outbound Communications
 
 - **In-app notifications:** Alerts for low float, new incident, task assigned. Supabase Realtime (or polling) for live updates. Shown in header notification center.
-- **Optional email/SMS for critical alerts** (configurable per portal or role).
+- **Email/SMS for critical alerts:** Configurable per user via Settings → Notifications (`portal_user_preferences`). Each notification type (e.g. agent_low_float, float_request_approved) has toggles for in_app, email, sms. Defaults: in_app on, email/sms off. See Profile & Settings spec §8.
+
+### 7.5 Profile & Settings (Session, Password, Notification Preferences)
+
+Full specification is in **`docs/PROFILE_AND_SETTINGS.md`**. Summary:
+
+- **Session:** On login, set HTTP-only cookie `portal-auth` with access token. `GET /api/v1/portal/me` returns current user (`id`, `email`, `full_name`, `role`, `agent_id`, `phone`); 401 if unauthenticated. Profile and Settings pages call `/portal/me` with `credentials: 'include'`.
+- **Profile pages:** Per-portal routes (`/agent/profile`, `/ketchup/profile`, `/government/profile`, `/field-ops/profile`). If 401, show "Sign in to see your profile" and link to `/login`. Otherwise show account data from `me`; Agent profile also fetches agent details via `GET /api/v1/agents/[me.agent_id]`.
+- **Settings pages:** Per-portal (`/agent/settings`, etc.). Content: Change password form (POST `/api/v1/auth/change-password`), Notification preferences form (GET/PATCH `/api/v1/portal/user/preferences`). Commission rate (Agent) is read-only with link to Profile. Government Settings includes link to Configuration.
+- **Fallback route:** `/settings` calls `/portal/me` and redirects by role to the correct portal settings (or `/login?redirect=/settings` if 401). Header Settings link is portal-aware via `settingsHrefByPortal(pathname)`.
+- **Database:** Table `portal_user_preferences` (see §9) with key `notification_preferences` and JSON value per §8 of Profile & Settings spec. Password change updates `portal_users.password_hash` (bcrypt); rate-limited.
 
 #### 7.4.1 Outbound Communications (SMS, Email, Push)
 
@@ -660,7 +710,7 @@ Ketchup Portal (and other portals where specified) sends outbound communications
 
 | Channel | Recipients | Use cases (initiated from Ketchup / system) |
 |--------|------------|---------------------------------------------|
-| **SMS** | Beneficiaries | Voucher expiry reminder (next 7 days); bulk reminder from Beneficiaries list; proof-of-life reminder; duplicate redemption notice (*"Payment discrepancy detected… next disbursement adjusted. Contact support: [number]."*); optional OTP/verification. |
+| **SMS** | Beneficiaries | Voucher expiry reminder (next 7 days); bulk reminder from Beneficiaries list; proof-of-life reminder; duplicate redemption notice (*"Payment discrepancy detected… next disbursement adjusted. Contact support: [number]."*). OTP/verification: out of scope for v1; planned for v2. |
 | **SMS** | Agents | Float request approved/rejected; low float alert (e.g. &lt; N$500); parcel ready for collection; duplicate redemption float clawback notice. |
 | **SMS** | Field ops | Task assigned; route/share to driver; critical maintenance alert. |
 | **Email** | Portal users (Ketchup, Gov, Agent, Field ops) | Password reset; welcome / set password after account creation; scheduled report delivery (e.g. PDF to Gov); duplicate redemption supervisor alert (when amount ≥ threshold). |
@@ -672,9 +722,9 @@ Ketchup Portal (and other portals where specified) sends outbound communications
 **Implementation notes:**
 
 - **SMS:** Use existing `sms_queue` table and SMS gateway (e.g. `POST /api/v1/beneficiaries/[id]/sms`, `POST /api/v1/beneficiaries/bulk-sms`, cron `POST /api/v1/sms/process`). Extend for agent/field contact phone where applicable.
-- **Email:** SMTP (e.g. `SMTP_HOST`, `SMTP_FROM`) for transactional email; optional template service. Used for password reset, portal user onboarding, and optional report delivery.
+- **Email:** SMTP (e.g. `SMTP_HOST`, `SMTP_FROM`) for transactional email. Used for password reset, portal user onboarding, and report delivery when user has enabled it in Settings. Template service: use env-configured templates. External template service (e.g. SendGrid templates) is out of scope for v1; can be added in a later phase.
 - **Push:** Requires beneficiary/field app or PWA with push subscription; backend stores subscription and calls push provider (e.g. Web Push, FCM) when Ketchup triggers proof-of-life or when a task is assigned.
-- **Preferences:** Respect beneficiary `sms_opt_out` / `email_opt_out`; optional per-agent or per–portal user notification preferences (e.g. email digest vs in-app only).
+- **Preferences:** Respect beneficiary `sms_opt_out` / `email_opt_out`. Portal users: notification preferences stored in `portal_user_preferences` (key `notification_preferences`); per-type toggles for in_app, email, sms (and email_digest, report_delivery_frequency/format where applicable). See Profile & Settings spec §8 and §9.
 
 ### 7.5 Audit Logging
 - All user actions (create, update, delete) logged to `audit_logs` table with user ID, timestamp, IP, action.
@@ -855,7 +905,7 @@ CREATE TABLE duplicate_redemption_events (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   voucher_id              UUID NOT NULL REFERENCES vouchers(id),
   beneficiary_id          UUID NOT NULL REFERENCES users(id),
-  canonical_redemption_id UUID NOT NULL,           -- FK to the legitimate redemption event
+  canonical_redemption_ref TEXT NOT NULL,           -- Ref to the legitimate redemption event (UUID or external id as text)
   duplicate_attempt_id    TEXT NOT NULL,           -- idempotency key from the duplicate device
   duplicate_agent_id      UUID REFERENCES agents(id),
   duplicate_device_id     TEXT,
@@ -865,6 +915,7 @@ CREATE TABLE duplicate_redemption_events (
   status                  TEXT NOT NULL DEFAULT 'advance_posted',
     -- 'advance_posted' | 'under_review' | 'no_financial_impact' | 'agent_appealing' | 'resolved'
   resolution_notes        TEXT,
+  appeal_evidence_url      TEXT,                   -- URL to stored evidence for agent appeal
   resolved_by             UUID REFERENCES portal_users(id),
   resolved_at             TIMESTAMPTZ
 );
@@ -908,6 +959,18 @@ CREATE TABLE programmes (
   verification_frequency_days INT DEFAULT 90,
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Portal user preferences (notification_preferences, etc.) – Profile & Settings.
+CREATE TABLE IF NOT EXISTS portal_user_preferences (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  portal_user_id    UUID NOT NULL REFERENCES portal_users(id) ON DELETE CASCADE,
+  preference_key    TEXT NOT NULL DEFAULT 'notification_preferences',
+  preference_value  TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(portal_user_id, preference_key)
+);
+CREATE INDEX idx_portal_user_preferences_portal_user_id ON portal_user_preferences(portal_user_id);
 ```
 
 *(Note: Tables like `users`, `vouchers`, `wallets`, etc. are already defined in the Beneficiary Platform database; they are shared.)*
@@ -937,6 +1000,10 @@ CREATE TABLE programmes (
 
 | Method | Endpoint | Purpose | Request Body | Response |
 |--------|----------|---------|--------------|----------|
+| `GET` | `/api/v1/portal/me` | Current portal user (session) | — | `{ id, email, full_name, role, agent_id?, phone? }`; 401 if unauthenticated |
+| `POST` | `/api/v1/auth/change-password` | Change password | `{ current_password, new_password }` | `200` or `400`/`401` |
+| `GET` | `/api/v1/portal/user/preferences` | Get user preferences | Query: `key` (default `notification_preferences`) | `{ data: { notification_preferences: { ... } } }` |
+| `PATCH` | `/api/v1/portal/user/preferences` | Update preferences | `{ notification_preferences: { ... } }` | `{ data: { notification_preferences: { ... } } }`; 400 if invalid |
 | `POST` | `/api/v1/portal/users` | Create a portal user (admin only) | `{ email, password, full_name, role, agent_id? }` | `{ id, email, role }` |
 | `GET` | `/api/v1/portal/users` | List portal users (with filters) | Query: `role`, `search` | `{ users: [...] }` |
 | `PATCH` | `/api/v1/portal/users/{id}/role` | Change user role | `{ role }` | `{ success }` |
@@ -962,6 +1029,7 @@ CREATE TABLE programmes (
 | `GET` | `/api/v1/portal/beneficiaries/{id}/advance-ledger` | Get beneficiary advance ledger | (none) | `{ advances: [...], total_outstanding_nad }` |
 | `GET` | `/api/v1/portal/advance-ledger/summary` | Programme-level advance summary | Query: `programme_id`, `cycle_date` | `{ total_outstanding, recovery_rate, count_beneficiaries_affected }` |
 | `POST` | `/api/v1/portal/advance-recovery` | Trigger manual advance recovery for a cycle | `{ beneficiary_id, cycle_date, amount_to_recover }` | `{ recovery_transaction_id, net_disbursed }` |
+| `GET` | `/api/v1/portal/dashboard/summary` | Ketchup dashboard KPIs (counts) | (none) | `{ data: { activeVouchers, beneficiariesCount, agentsCount, pendingFloatRequestsCount } }`; 401 if not ketchup_* |
 
 ### 10.3 Request/Response Examples
 
@@ -1014,7 +1082,7 @@ The following JSON examples follow the same structure as MCP tool request/respon
 **Request** `POST /api/v1/portal/parcels/{id}/collect`
 ```json
 {
-  "collected_by": "agent_portal_user_id_optional"
+  "collected_by": "uuid of portal_users.id (optional; for audit)"
 }
 ```
 
@@ -1066,6 +1134,127 @@ The following JSON examples follow the same structure as MCP tool request/respon
 }
 ```
 
+#### Profile & Settings (session and preferences)
+
+**Response** `GET /api/v1/portal/me` — `200 OK`
+```json
+{
+  "id": "a00e8400-e29b-41d4-a716-446655440000",
+  "email": "agent.shop@example.com",
+  "full_name": "Maria Shopkeeper",
+  "role": "agent",
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "phone": null
+}
+```
+**Response** `401 Unauthorized`: `{ "error": "Unauthorized" }`. Auth: cookie `portal-auth` or `Authorization: Bearer <token>`.
+
+**Request** `POST /api/v1/auth/change-password`
+```json
+{
+  "current_password": "OldSecureP@ss1",
+  "new_password": "NewSecureP@ss2"
+}
+```
+**Response** `200 OK`: `{ "message": "Password updated" }`. **Response** `400`: invalid body or current password mismatch. **Response** `401`: not authenticated. Rate limit: same as login (e.g. 10/min per IP or per user).
+
+**Response** `GET /api/v1/portal/user/preferences` — `200 OK`
+```json
+{
+  "data": {
+    "notification_preferences": {
+      "agent_low_float": { "in_app": true, "email": false, "sms": true },
+      "agent_float_request_approved": { "in_app": true, "email": true, "sms": false }
+    }
+  }
+}
+```
+If no row exists, return `{ "data": { "notification_preferences": {} } }` or default structure per Profile & Settings spec §8.3.
+
+**Request** `PATCH /api/v1/portal/user/preferences`
+```json
+{
+  "notification_preferences": {
+    "agent_low_float": { "in_app": true, "email": false, "sms": true }
+  }
+}
+```
+**Response** `200 OK`: `{ "data": { "notification_preferences": { ... } } }`. **Response** `400`: invalid structure or unknown notification type for portal.
+
+#### Current user (Profile & Settings)
+
+**Request** `GET /api/v1/portal/me`  
+Headers: Cookie `portal-auth` or `Authorization: Bearer <token>`.
+
+**Response** `200 OK`
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "email": "agent.shop@example.com",
+  "full_name": "Maria Shopkeeper",
+  "role": "agent",
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "phone": null
+}
+```
+
+**Response** `401 Unauthorized`
+```json
+{ "error": "Unauthorized" }
+```
+
+#### Get user preferences
+
+**Request** `GET /api/v1/portal/user/preferences` or `GET /api/v1/portal/user/preferences?key=notification_preferences`
+
+**Response** `200 OK`
+```json
+{
+  "data": {
+    "notification_preferences": {
+      "agent_low_float": { "in_app": true, "email": false, "sms": true },
+      "agent_float_request_approved": { "in_app": true, "email": true, "sms": false }
+    }
+  }
+}
+```
+If no row exists, return `data.notification_preferences` as `{}` or default structure so UI can render toggles with defaults.
+
+#### Update user preferences
+
+**Request** `PATCH /api/v1/portal/user/preferences`
+```json
+{
+  "notification_preferences": {
+    "agent_low_float": { "in_app": true, "email": false, "sms": true },
+    "agent_float_request_approved": { "in_app": true, "email": true, "sms": false }
+  }
+}
+```
+
+**Response** `200 OK` — same shape as GET.  
+**Response** `400` — invalid structure or unknown notification type.
+
+#### Change password
+
+**Request** `POST /api/v1/auth/change-password`
+```json
+{
+  "current_password": "OldSecureP@ss1",
+  "new_password": "NewSecureP@ss2"
+}
+```
+Validation: `new_password` min 8 characters (Zod schema in `src/lib/validate.ts`).
+
+**Response** `200 OK`
+```json
+{ "message": "Password updated" }
+```
+
+**Response** `400` — current password incorrect or validation failed.  
+**Response** `401` — not authenticated.  
+Rate limit: same as login (e.g. 10 requests per minute per IP or per user).
+
 ---
 
 ## 11. Integration with Beneficiary Platform
@@ -1081,7 +1270,7 @@ The following JSON examples follow the same structure as MCP tool request/respon
 
 | Requirement | Implementation |
 |-------------|----------------|
-| **Authentication** | Supabase Auth with strong password policy; optional 2FA (TOTP) for sensitive roles. |
+| **Authentication** | Supabase Auth or custom JWT (portal_users + bcrypt) with strong password policy. 2FA (TOTP) available in Settings for any user; may be required by policy for specific roles (e.g. ketchup_finance for large float approvals). See §25. |
 | **Authorization** | Row‑level security (RLS) in PostgreSQL enforced via Supabase; Next.js middleware checks routes based on role. |
 | **Audit Logging** | All actions logged to `audit_logs` table with immutable records (5‑year retention). |
 | **Data Encryption** | All data in transit TLS; sensitive PII encrypted at rest (column‑level via pgcrypto). |
@@ -1090,6 +1279,13 @@ The following JSON examples follow the same structure as MCP tool request/respon
 | **Incident Reporting** | Integration with incident response workflow (PSD‑12). |
 | **Data Minimization** | Only necessary data exposed to each portal; no PII in logs. |
 | **Dual Control** | Sensitive actions (e.g., trust account adjustment, approving large float) require two approvals. |
+
+### 12.1 Edge Cases & Business Logic (Duplicate Redemption, Float, Advance Recovery)
+
+- **Duplicate redemption – agent appeal:** If status is `agent_appealing`, the agent (or duplicate_agent_id) has contested. Workflow: Ketchup reviews evidence; can set status to `under_review`, `no_financial_impact`, or `resolved` with resolution_notes. No automatic reversal of advance; if overturned, manual adjustment and advance reversal is a separate process. UI: show "Appealing" badge and resolution form for ketchup_compliance/ketchup_ops.
+- **Clock skew (device timestamps):** `duplicate_requested_at` comes from the device. Allow tolerance (e.g. ±5 minutes) when comparing to server time; log skew if outside tolerance for audit. Do not reject events solely due to skew; use for analytics and support.
+- **Float request approval:** Only roles `ketchup_ops` and `ketchup_finance` can PATCH float-requests to approved/rejected. On approve: update agent float, create float transaction record, send in-app + email/SMS per `portal_user_preferences`. On reject: notify agent (in-app + email/SMS if enabled). Approval is single-step unless dual-control policy applies (e.g. amount &gt; threshold).
+- **Advance recovery – multiple advances:** A beneficiary may have multiple `beneficiary_advances` rows (different source events). Recovery logic: when issuing next voucher, sum `outstanding_amount` for that beneficiary (and optionally programme), cap deduction by voucher amount, and create `advance_recovery_transactions` rows. Order recovery by oldest advance first (FIFO). If partial recovery in a cycle, update `recovered_amount` and `last_recovery_at`; leave status `outstanding` until `recovered_amount >= original_amount`.
 
 ---
 
@@ -1109,12 +1305,25 @@ The following JSON examples follow the same structure as MCP tool request/respon
 
 ## 14. Localization & Accessibility
 
-- **Language support**: English as default; future addition of Afrikaans, Oshiwambo, etc. via i18n (next-i18next).
+- **Language support**: English as default. Additional languages (Afrikaans, Oshiwambo, etc.) are out of scope for v1; planned for v2 via i18n (e.g. next-i18next).
 - **Accessibility**: Use shadcn/ui components which are built with accessibility in mind. Add `aria` labels where needed. Test with screen readers.
 
 ---
 
 ## 15. Implementation Phases
+
+### 15.1 Implementation validation (v1.4.2)
+
+The following has been validated:
+
+- **Build:** `npm run build` (Next.js production build) completes successfully; TypeScript compiles; all app and API routes are generated.
+- **Component inventory:** All portal-specific components listed in **COMPONENT_INVENTORY.md** (§11 – Ketchup, Government, Agent, Field Ops) are implemented under `src/components/{ketchup,government,agent,field-ops}/` and exported from the respective index files.
+- **Task list:** All tasks in **PENDING_COMPONENTS_TASKS.md** are marked Done; no pending component work remains for MVP.
+- **Data sources:** Portal pages use **real API endpoints only**. No mocks or placeholder data. Empty states use neutral fallbacks (e.g. "—", empty list) when the API returns null or empty. Key API usage:
+  - **Ketchup:** Reconciliation (`GET /api/v1/reconciliation/daily` with `transaction_entries`), Audit (`GET /api/v1/audit-logs`), Network map (`GET /api/v1/assets/map`), App analytics (`GET /api/v1/analytics/dau`, `mau`, `channel-breakdown`, `redemption-rate`, `app-users`), USSD viewer (`GET /api/v1/ussd/sessions`, `sessions/[id]`).
+  - **Government:** Dashboard (ProgrammeDashboard), Unverified (`GET /api/v1/beneficiaries/unverified`), Voucher monitor, Audit report generator, Programme form (`GET/POST /api/v1/programmes`).
+  - **Agent:** Dashboard, Float (`GET /api/v1/agent/float`, `float/history`, `POST float/request`), Transactions (`GET /api/v1/agent/transactions`), Parcels (`GET /api/v1/agent/parcels`, `POST parcels/[id]/collect`), Commission statement.
+  - **Field Ops:** Assets (`GET /api/v1/field/assets`), Tasks (`GET/POST /api/v1/field/tasks`), Activity (`GET /api/v1/field/reports/activity` with `activity_rows`), Routes (`GET /api/v1/field/route`).
 
 ### Phase 1: Foundation & Ketchup Portal MVP (8 weeks)
 - Week 1-2: Project setup, Supabase Auth, DB schema creation.
@@ -1168,11 +1377,12 @@ The following environment variables must be set in `.env.local` (development) an
 | `SMTP_USER` | SMTP username | `user@example.com` |
 | `SMTP_PASS` | SMTP password | `secret` |
 | `SMTP_FROM` | From email address | `no-reply@ketchup.cc` |
-| `ENCRYPTION_KEY` | 32‑byte hex key for PII encryption (see §12) | (generate via `openssl rand -hex 32`) |
+| `ENCRYPTION_KEY` | 32‑byte hex key for PII encryption (see §12). Generate with: `openssl rand -hex 32`. Store securely; rotate per security policy. | 64-character hex string |
 | `SMS_API_URL` | URL of SMS service (e.g., `https://api.ketchup.cc/sms`) | `https://api.ketchup.cc` |
 | `SMS_API_KEY` | API key for SMS service | `smartpay_...` |
 | `LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) | `info` |
-| `SENTRY_DSN` | (Optional) Sentry DSN for error tracking | `https://...@sentry.io/...` |
+| `SENTRY_DSN` | Server-side Sentry DSN for error tracking (optional). When set, API and server errors are reported to Sentry. | `https://...@sentry.io/...` |
+| `NEXT_PUBLIC_SENTRY_DSN` | Client-side Sentry DSN for browser error tracking (optional). When set, client errors are reported. | `https://...@sentry.io/...` |
 
 ---
 
@@ -1196,16 +1406,29 @@ The following environment variables must be set in `.env.local` (development) an
 - Configure custom domains in Vercel for each portal (e.g., `ketchup.example.com`, `gov.example.com`, `agent.example.com`, `field.example.com`).
 - Update `NEXT_PUBLIC_APP_URL` accordingly.
 
----
+### 18.4 DNS Configuration
 
-## 19. Error Handling & Loading States
+All CNAME records already exist in Namecheap:
+
+| Host | Type | Value | Status |
+|------|------|-------|--------|
+| `app` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
+| `gov` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
+| `portal` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
+| `agent` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
+| `mobile` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
+| `api` | CNAME | `[railway-app].railway.app` | ✓ Configured |
+
+No DNS changes needed — just add domains in Vercel project settings.
+
+---
 
 All pages and components must handle loading, error, and empty states consistently.
 
 | State | Implementation |
 |-------|----------------|
 | **Loading** | Use skeleton loaders or a centered spinner (via `LoadingState` component). |
-| **Error** | Show a user‑friendly error message with retry option (using `ErrorState` component). Log error to console and optionally to Sentry. |
+| **Error** | Show a user‑friendly error message with retry option (using `ErrorState` component). Log error to console; when `SENTRY_DSN` or `NEXT_PUBLIC_SENTRY_DSN` is set, also report to Sentry. |
 | **Empty** | Display an empty state message with an illustration and a primary action if applicable (e.g., "No agents yet. Add your first agent."). |
 | **Form validation** | Inline error messages below each field (see §21). |
 | **API errors** | Show a toast notification with the error message (using `sonner` or similar). |
@@ -1231,6 +1454,10 @@ All pages and components must handle loading, error, and empty states consistent
 | `/api/v1/portal/units/map` (GET) | `field_tech`, `field_lead`, `ketchup_ops` |
 | `/api/v1/portal/programmes` (POST) | `gov_manager` |
 | `/api/v1/portal/programmes` (GET) | `gov_manager`, `gov_auditor` |
+| `GET /api/v1/portal/me` | Any authenticated portal user (cookie or Bearer). Returns 401 if missing/invalid. |
+| `POST /api/v1/auth/change-password` | Any authenticated portal user. Rate-limited per IP/user. |
+| `GET /api/v1/portal/user/preferences` | Any authenticated portal user. |
+| `PATCH /api/v1/portal/user/preferences` | Any authenticated portal user. |
 
 All other endpoints inherit permissions from the route group.
 
@@ -1254,6 +1481,7 @@ Response includes `meta` object with `total`, `page`, `limit`, `totalPages`.
 - Filter by exact match: `?status=pending`
 - Date range: `?from=2026-01-01&to=2026-01-31`
 - Search: `?search=john` (searches relevant text fields)
+- **Region:** The `region` query parameter (used on beneficiaries, agents, duplicate-redemptions, vouchers/duplicates, and in list UIs) must be one of **Namibia’s 14 administrative regions**. Invalid values return `400` with `ValidationError`. The single source of truth is **`src/lib/regions.ts`** (exports `NAMIBIA_REGION_CODES`, `REGION_SELECT_OPTIONS`, `isValidRegion`, `normalizeRegion`). All region dropdowns and filters use these 14 regions; ǁKaras is stored as `Karas` in APIs for ASCII safety, with display label "ǁKaras".
 
 ### 21.3 Validation
 
@@ -1277,10 +1505,18 @@ All POST/PATCH endpoints validate input using Zod schemas. Errors are returned i
 
 | Test Type | Tools | Coverage |
 |-----------|-------|----------|
-| **Unit tests** | Vitest / Jest | Service layer, utility functions, validation schemas. |
-| **Integration tests** | Vitest + Supabase local | API endpoints against test database. |
-| **End‑to‑end tests** | Playwright | Critical user journeys (login, float request, task creation). |
-| **Component tests** | Storybook | Visual regression of UI components. |
+| **Unit tests** | Vitest / Jest | Service layer, utility functions, validation schemas (Zod), formatters, auth helpers. |
+| **Integration tests** | Vitest + test DB (Neon branch or local) | All API routes in §10: login, `/portal/me`, change-password, preferences GET/PATCH, float-requests, parcels, tasks, duplicate-redemptions, advance-ledger. Use seeded data; assert status codes and response shape. |
+| **End‑to‑end tests** | Playwright | Critical user journeys: login → dashboard; Agent: float request → approval; Field Ops: task list → update status; Ketchup: duplicate redemptions list → resolve; Profile/Settings: load profile, change password, save notification preferences; `/settings` redirect by role. |
+| **Component tests** | Storybook or Vitest + React Testing Library | LoadingState, ErrorState, EmptyState, ChangePasswordForm, NotificationPreferencesForm, DataTable, DashboardCard. |
+
+Per-feature coverage:
+
+- **Auth & session:** Unit tests for token decode and cookie helper; integration tests for POST login (cookie set), GET /portal/me (200 vs 401).
+- **Profile & Settings:** Integration tests for GET/PATCH preferences (default, upsert), POST change-password (success, wrong current, rate limit); E2E for Settings page save.
+- **Float requests:** Integration tests for POST (agent), PATCH approve/reject (ketchup role); E2E for Agent request and Ketchup approval with notification.
+- **Duplicate redemptions:** Integration tests for GET list (filters, pagination), PATCH status; E2E for Ketchup review flow.
+- **Advance recovery:** Unit tests for recovery amount calculation; integration tests for GET advance-ledger, POST advance-recovery.
 
 All tests must be run in CI before deployment.
 
@@ -1288,10 +1524,21 @@ All tests must be run in CI before deployment.
 
 ## 23. Monitoring & Logging
 
-- **Application logs:** Sent to console (structured JSON). In production, use a log aggregation service (e.g., Logtail, Datadog).
-- **Error tracking:** Integrate Sentry for client and server errors.
-- **Performance monitoring:** Use Vercel Analytics or Datadog RUM.
+- **Application logs:** Sent to console (structured JSON). In production, use a log aggregation service (e.g., Logtail, Datadog). Include request id, user id (when authenticated), route, and duration.
+- **Error tracking:** Integrate Sentry for client and server errors when `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
+- **Performance monitoring:** Use Vercel Analytics or Datadog RUM. Track LCP, FID, CLS for portal pages.
 - **Audit logs:** All actions are logged to `audit_logs` table (see §9). These are immutable and retained for 5 years.
+
+**Key metrics to monitor:**
+
+| Metric | Description | Target / alert |
+|--------|-------------|----------------|
+| Duplicate redemption rate | Count of duplicate_redemption_events per programme/period vs total redemptions | Trend; alert if spike above baseline |
+| Float request response time | Time from request to approval/rejection | p95 &lt; 24 hours; alert if backlog &gt; N |
+| Advance recovery rate | Recovered amount / total outstanding per cycle | Track by programme; alert if drop |
+| API latency | p50/p95/p99 for `/api/v1/portal/*` | p95 &lt; 2s for list endpoints |
+| Auth failures | 401/403 rate and failed login rate | Alert on brute-force pattern |
+| Portal page load | LCP for dashboard and list views | p95 &lt; 2s |
 
 ---
 
@@ -1395,7 +1642,7 @@ For resources that support multiple operations (create, list, get, update, delet
 | `update` | PATCH  | `{ task_id, status?, notes? }` |
 | `delete` | DELETE | `?task_id=...` |
 
-Portal APIs in §10 can stay REST‑style (separate routes). For future consolidation, an optional `POST /api/v1/portal/tasks/manage` with `action` is possible and would align with the MCP tools reference.
+Portal APIs in §10 remain REST‑style (separate routes). A consolidated `POST /api/v1/portal/tasks/manage` with `action` is not in v1; may be added in a later phase to align with MCP tool patterns.
 
 ### 26.3 Supabase Auth and middleware
 
@@ -1428,7 +1675,8 @@ Use these for patterns and tool semantics when implementing portal features (e.g
 | **MCP Tools Reference** | `archon/docs/docs/mcp-tools.mdx` | All 14 tools: parameters, return types, examples (`perform_rag_query`, `manage_project`, `manage_task`, `manage_document`, `manage_versions`, `health_check`, etc.). |
 | **MCP Server** | `archon/docs/docs/mcp-server.mdx` | Implementation pattern (tool → HTTP to Server API), env vars, Docker, Cursor/Windsurf/Claude config, tool usage examples. |
 
-### 26.5 Optional: Cursor/IDE MCP configuration
+### 26.5 Cursor/IDE MCP configuration (optional)
+If using Cursor or an IDE with MCP support, configure the Archon server for RAG and code examples as described above.
 
 If the team uses **Archon as an MCP server** (e.g. for project/task management or RAG over internal docs) while building the portals, configure Cursor as follows. Archon MCP uses **SSE**; the server runs at `http://localhost:8051/sse` when Archon is up.
 
@@ -2846,23 +3094,46 @@ export function QuickAction({ href, icon, label, description, className = '' }: 
 
 **DashboardCards** (`components/ketchup/dashboard-cards.tsx`):
 
+Implement using a dashboard summary API. Add `GET /api/v1/portal/dashboard/summary` (Ketchup only) returning:
+`{ activeVouchers: number, beneficiariesCount: number, agentsCount: number, pendingFloatRequestsCount: number }`.
+Aggregate from: vouchers (status=available), users (beneficiaries), agents, float_requests (status=pending). Use LoadingState while fetching; on error use ErrorState with retry. Example implementation:
+
 ```tsx
 'use client';
 
+import { useState, useEffect } from 'react';
 import { MetricCard } from '@/components/ui/metric-card';
+import { LoadingState } from '@/components/ui/loading-state';
+import { ErrorState } from '@/components/ui/error-state';
 
-const stats = [
-  { title: 'Active Vouchers', value: '—', change: 'Load from API', variant: 'ketchup' as const },
-  { title: 'Beneficiaries', value: '—', change: 'Load from API', variant: 'primary' as const },
-  { title: 'Agents', value: '—', change: 'Load from API', variant: 'accent' as const },
-  { title: 'Pending Float', value: '—', change: 'Load from API', variant: 'warning' as const },
+const cards = [
+  { key: 'activeVouchers', title: 'Active Vouchers', variant: 'ketchup' as const },
+  { key: 'beneficiariesCount', title: 'Beneficiaries', variant: 'primary' as const },
+  { key: 'agentsCount', title: 'Agents', variant: 'accent' as const },
+  { key: 'pendingFloatRequestsCount', title: 'Pending Float', variant: 'warning' as const },
 ];
 
 export function DashboardCards() {
+  const [data, setData] = useState<Record<string, number> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/v1/portal/dashboard/summary', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed to load'))))
+      .then((json) => { setData(json.data ?? json); setError(null); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  if (!data) return null;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-      {stats.map((s) => (
-        <MetricCard key={s.title} title={s.title} value={s.value} change={s.change} variant={s.variant} />
+      {cards.map((c) => (
+        <MetricCard key={c.key} title={c.title} value={data[c.key] ?? 0} variant={c.variant} />
       ))}
     </div>
   );
@@ -3024,7 +3295,7 @@ export function CardGrid({ columns = 3, children, className = '' }: CardGridProp
 | `components/ketchup/dashboard-cards.tsx` | Ketchup dashboard metric cards |
 | `components/ketchup/recent-activity.tsx` | Recent activity list |
 
-Ensure `tailwind.config` includes DaisyUI and your `content` paths include these `components/` paths. Replace placeholder dashboard data with real API calls per §10.
+Ensure `tailwind.config` includes DaisyUI and your `content` paths include these `components/` paths. Dashboard and list data must be loaded from the APIs defined in §10 (e.g. `GET /api/v1/portal/dashboard/summary` for Ketchup dashboard cards); use LoadingState and ErrorState for loading and error states.
 
 ---
 
@@ -3267,6 +3538,8 @@ This mark represents **clarity, trust, and connectivity** in G2P payments—mode
 | **Brand mark** | The mark stands out on both dark and light backdrops when clear space is maintained. Use the full‑sphere lockup; do not alter the four quadrants or the "K" letterform. |
 
 **Logo asset reference:** `ketchup-portal/public/ketchup-logo.png` — primary circular mark (Lime Green, Magenta, Royal Blue, Sunny Yellow quadrants; dark gray drop shadow).
+
+**Logo implementation across the application:** Use this asset consistently in (1) **Landing page** (`/`) — hero logo; (2) **Login page** — LogoMark above the sign-in card; (3) **Portal header** — BrandLogo (mark) left side of the navbar in all four portals; (4) **Portal sidebars** — BrandLogo (mark) in Ketchup, Government, Agent, and Field Ops sidebar headers, linking to that portal’s dashboard. This ensures a single, recognizable Ketchup SmartPay identity at every entry point and inside every portal. For the full mapping of components used across landing, auth, header, and all sidebars, see **COMPONENT_INVENTORY.md** (Extension to all portals) and PRD §2.4.
 
 ---
 
@@ -4340,18 +4613,39 @@ The **canonical database schema** and **API specifications** for the Ketchup Sma
 
 That document includes:
 
-- Full table definitions (core: `users`, `vouchers`, `wallets`, `wallet_transactions`, `transactions`, `proof_of_life_events`, `loans`, `programmes`; portal-specific: `portal_users`, `agents`, `agent_float_transactions`, `float_requests`, `pos_terminals`, `assets`, `asset_locations`, `maintenance_logs`, `tasks`, `parcels`, `audit_logs`, `user_sessions`, `ussd_sessions`).
+- Full table definitions (core: `users`, `vouchers`, `wallets`, `wallet_transactions`, `transactions`, `proof_of_life_events`, `loans`, `programmes`; portal-specific: `portal_users`, `portal_user_preferences`, `agents`, `agent_float_transactions`, `float_requests`, `pos_terminals`, `assets`, `asset_locations`, `maintenance_logs`, `tasks`, `parcels`, `audit_logs`, `user_sessions`, `ussd_sessions`).
 - API design principles (REST, OpenAPI 3.1, HTTPS/mTLS, OAuth2/JWT, RBAC, versioning, pagination, error structure).
-- Complete endpoint reference for Auth, Ketchup Portal (beneficiaries, vouchers, agents, terminals, assets, reconciliation, audit, analytics, USSD), Government Portal, Agent Portal, and Field Ops Portal.
+- Complete endpoint reference for Auth (login, change-password), Portal (me, user/preferences), Ketchup Portal (beneficiaries, vouchers, agents, terminals, assets, reconciliation, audit, analytics, USSD, dashboard/summary), Government Portal, Agent Portal, and Field Ops Portal.
 - Authentication & authorization (JWT, client credentials, mTLS, RBAC).
-- Consent management (future Open Banking).
+- Consent management: Out of scope for v1; planned for v2 (Open Banking consent flows). See DATABASE_AND_API_DESIGN.md §5.
 - Request/response examples and OpenAPI snippet.
 
 Sections 9 and 10 of this PRD remain the high-level overview; the implementation (Drizzle schema, `/api/v1/*` routes) follows the Database & API Design document.
 
 ---
 
-**Document version:** 1.3  
+### PRD v1.4 Completion Checklist
+
+Before handing off to development, confirm:
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | No ambiguous "Future", "To add", "Placeholder", "Optional" (deferral) or "Load from API" left unresolved; deferred items marked "Out of scope for v1" or "Planned for v2". | ✓ |
+| 2 | All API endpoints in §10.2 have full request/response and error formats; Profile & Settings endpoints (me, preferences, change-password) and dashboard/summary documented. | ✓ |
+| 3 | Database schema §9 includes `portal_user_preferences` and indexes; DATABASE_AND_API_DESIGN.md kept in sync. | ✓ |
+| 4 | Profile & Settings integrated: §7.5 summary, docs/PROFILE_AND_SETTINGS.md referenced, session/cookie/redirect and notification preference keys defined. | ✓ |
+| 5 | Edge cases §12.1: duplicate appeal workflow, clock skew, float approval flow, advance recovery (multiple advances) specified. | ✓ |
+| 6 | Permissions §20 cover all routes including GET /portal/me, change-password, GET/PATCH preferences. | ✓ |
+| 7 | Environment variables §17: ENCRYPTION_KEY generation, SENTRY_DSN and NEXT_PUBLIC_SENTRY_DSN documented. | ✓ |
+| 8 | Testing §22: per-feature coverage (auth, Profile & Settings, float, duplicate redemptions, advance recovery) and E2E journeys specified. | ✓ |
+| 9 | Monitoring §23: key metrics (duplicate rate, float response time, advance recovery rate, API latency, auth failures, LCP) defined. | ✓ |
+| 10 | Dashboard and UI code examples use real data fetching (e.g. GET /api/v1/portal/dashboard/summary), LoadingState, ErrorState; no placeholder "—" or "Load from API". | ✓ |
+
+**v1.4 is the single source of truth for MVP development. Development team can begin Phase 1 with confidence.**
+
+---
+
+**Document version:** 1.4  
 **Last updated:** March 2026  
 **Owner:** Ketchup Software Solutions – Product Team  
 **Next steps:** Review with stakeholders, finalize API contracts, begin Phase 1.

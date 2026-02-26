@@ -48,7 +48,7 @@ export function BeneficiarySmsHistoryTab({ beneficiaryId }: BeneficiarySmsHistor
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/v1/sms/history?beneficiary_id=${beneficiaryId}&page=1&limit=50`)
+    fetch(`/api/v1/sms/history?beneficiary_id=${beneficiaryId}&page=1&limit=50`, { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;

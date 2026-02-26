@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/reconciliation/daily – Daily reconciliation from transactions.
- * Query: date (optional, default today). Returns internal totals; bank_total can be wired when bank feed exists.
+ * Query: date (optional, default today). Returns internal totals, bank_total, and transaction entries for the day.
  */
 
 import { NextRequest } from "next/server";
@@ -32,12 +32,34 @@ export async function GET(request: NextRequest) {
     const bank_total = internal_total;
     const discrepancy = "0";
 
+    const entries = await db
+      .select({
+        id: transactions.id,
+        timestamp: transactions.timestamp,
+        type: transactions.type,
+        amount: transactions.amount,
+        method: transactions.method,
+      })
+      .from(transactions)
+      .where(sql`(${transactions.timestamp})::date = ${date}::date`)
+      .orderBy(transactions.timestamp);
+
+    const transaction_entries = entries.map((e) => ({
+      id: e.id,
+      date: e.timestamp.toISOString().slice(0, 10),
+      type: e.type,
+      amount: String(e.amount ?? 0),
+      reference: e.method ?? e.type,
+      settlement_status: "settled",
+    }));
+
     return Response.json({
       date,
       internal_total,
       bank_total,
       discrepancy,
       transaction_count,
+      transaction_entries: transaction_entries,
     });
   } catch (err) {
     logger.error(ROUTE, err instanceof Error ? err.message : "Internal server error", {

@@ -2,26 +2,16 @@
 
 /**
  * Trust Account Reconciliation – Ketchup Portal (PRD §3.2.6).
- * Data from GET /api/v1/reconciliation/daily; add adjustment via POST /api/v1/reconciliation/adjustment.
+ * Uses TrustReconciliation; data from GET /api/v1/reconciliation/daily; adjustment via POST.
  */
 
 import { useState, useEffect } from 'react';
-import { SectionHeader } from '@/components/ui/section-header';
-import { MetricCard } from '@/components/ui/metric-card';
-import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { TrustReconciliation, type TrustReconciliationRow } from '@/components/ketchup';
 import { useToast } from '@/components/ui/toast';
-
-const TX_COLS = [
-  { key: 'date', header: 'Date' },
-  { key: 'type', header: 'Type' },
-  { key: 'amount', header: 'Amount' },
-  { key: 'reference', header: 'Reference' },
-  { key: 'settlementStatus', header: 'Settlement' },
-];
 
 export default function ReconciliationPage() {
   const { addToast } = useToast();
@@ -33,21 +23,35 @@ export default function ReconciliationPage() {
   const [internalBalance, setInternalBalance] = useState('NAD 0');
   const [bankBalance, setBankBalance] = useState('NAD 0');
   const [discrepancy, setDiscrepancy] = useState('NAD 0');
-  const [transactions, setTransactions] = useState<Array<{ id: string; date: string; type: string; amount: string; reference: string; settlementStatus: string }>>([]);
+  const [entries, setEntries] = useState<TrustReconciliationRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/reconciliation/daily')
+    fetch('/api/v1/reconciliation/daily', { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
         setInternalBalance(json.internal_total != null ? `NAD ${Number(json.internal_total).toLocaleString()}` : 'NAD 0');
         setBankBalance(json.bank_total != null ? `NAD ${Number(json.bank_total).toLocaleString()}` : 'NAD 0');
         setDiscrepancy(json.discrepancy != null ? `NAD ${Number(json.discrepancy).toLocaleString()}` : 'NAD 0');
-        setTransactions([]);
+        const raw = json.transaction_entries ?? [];
+        let running = 0;
+        const mapped: TrustReconciliationRow[] = raw.map((e: { id: string; date: string; type: string; amount: string; reference: string }) => {
+          const amt = Number(e.amount) || 0;
+          running -= amt; // disbursement reduces trust balance
+          return {
+            id: e.id,
+            date: e.date,
+            description: `${e.type} ${e.reference || ''}`.trim() || 'Disbursement',
+            debit: amt > 0 ? `NAD ${amt.toLocaleString()}` : '',
+            credit: '',
+            balance: `NAD ${running.toLocaleString()}`,
+          };
+        });
+        setEntries(mapped);
       })
-      .catch(() => { if (!cancelled) setTransactions([]); })
+      .catch(() => { if (!cancelled) setEntries([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -63,6 +67,7 @@ export default function ReconciliationPage() {
     if (Number.isNaN(amount)) { addToast('Enter a valid amount.', 'error'); return; }
     try {
       const res = await fetch('/api/v1/reconciliation/adjustment', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount, reason: adjustmentReason.trim() }),
@@ -76,21 +81,14 @@ export default function ReconciliationPage() {
     } catch { addToast('Failed to submit adjustment.', 'error'); }
   };
 
+  const summary = {
+    totalCredits: bankBalance,
+    totalDebits: internalBalance,
+    balance: discrepancy,
+  };
+
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="Trust Account Reconciliation"
-        description="Daily reconciliation: internal balance vs bank statement; list of transactions; adjustments with approval."
-      />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <MetricCard title="Internal ledger balance" value={internalBalance} variant="primary" />
-        <MetricCard title="Bank statement balance" value={bankBalance} variant="accent" />
-        <MetricCard
-          title="Discrepancy"
-          value={discrepancy}
-          variant={discrepancy !== 'NAD 0' ? 'warning' : 'success'}
-        />
-      </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={handleFlagDiscrepancy} disabled={flagged}>
           {flagged ? 'Flagged' : 'Flag discrepancy'}
@@ -99,20 +97,8 @@ export default function ReconciliationPage() {
           Add adjustment
         </Button>
       </div>
-      <div>
-        <h3 className="text-lg font-semibold mb-2">Today&apos;s transactions</h3>
-        <DataTable
-          columns={TX_COLS}
-          data={transactions}
-          keyExtractor={(r) => r.id}
-          emptyMessage={loading ? 'Loading…' : 'No transactions for today.'}
-        />
-      </div>
-      <Modal
-        open={adjustmentOpen}
-        onClose={() => setAdjustmentOpen(false)}
-        title="Add adjustment"
-      >
+      <TrustReconciliation summary={summary} entries={entries} loading={loading} />
+      <Modal open={adjustmentOpen} onClose={() => setAdjustmentOpen(false)} title="Add adjustment">
         <div className="space-y-4">
           <p className="text-sm text-content-muted">
             Adjustment requires a reason and manager approval (dual control).

@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { portalFetch } from '@/lib/portal-fetch';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SearchHeader } from '@/components/ui/search-header';
 import { DataTable } from '@/components/ui/data-table';
@@ -80,7 +81,7 @@ export default function GovernmentVouchersPage() {
     const params = new URLSearchParams();
     if (programmeFilter) params.set('programme_id', programmeFilter);
     try {
-      const res = await fetch(`/api/v1/advance-ledger/summary?${params.toString()}`);
+      const res = await portalFetch(`/api/v1/advance-ledger/summary?${params.toString()}`);
       const json = await res.json();
       if (res.ok)
         setDupSummary({
@@ -102,7 +103,7 @@ export default function GovernmentVouchersPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/v1/programmes?page=1&limit=100')
+    portalFetch('/api/v1/programmes?page=1&limit=100')
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -119,7 +120,7 @@ export default function GovernmentVouchersPage() {
     setLoading(true);
     const params = new URLSearchParams({ page: '1', limit: '500' });
     if (programmeFilter) params.set('programme_id', programmeFilter);
-    fetch(`/api/v1/vouchers?${params.toString()}`)
+    portalFetch(`/api/v1/vouchers?${params.toString()}`)
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;

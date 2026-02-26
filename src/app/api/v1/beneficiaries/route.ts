@@ -13,6 +13,7 @@ import {
   jsonError,
 } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { isValidRegion, normalizeRegion } from "@/lib/regions";
 
 const ROUTE = "GET /api/v1/beneficiaries";
 const basePath = "/api/v1/beneficiaries";
@@ -22,7 +23,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");
-    const region = searchParams.get("region");
+    const regionParam = searchParams.get("region");
+
+    const region = regionParam
+      ? (isValidRegion(regionParam) ? normalizeRegion(regionParam)! : null)
+      : undefined;
+    if (regionParam != null && regionParam !== "" && !region) {
+      return jsonError("Invalid region", "ValidationError", undefined, 400, ROUTE);
+    }
 
     const { data, totalRecords } = await listBeneficiaries({
       page,

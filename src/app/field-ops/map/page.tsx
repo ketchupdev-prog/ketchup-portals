@@ -34,7 +34,7 @@ export default function FieldOpsMapPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/field/map')
+    fetch('/api/v1/field/map', { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;

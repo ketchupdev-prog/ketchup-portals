@@ -3,41 +3,37 @@
 /**
  * Agent Float Management – PRD §5.2.2.
  * Data from GET /api/v1/agent/float and GET /api/v1/agent/float/history; POST float/request for top-up.
+ * Uses: FloatHistory, FloatRequestForm.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { SectionHeader } from '@/components/ui/section-header';
 import { MetricCard } from '@/components/ui/metric-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
+import { FloatHistory, FloatRequestForm, type FloatHistoryRow } from '@/components/agent';
 import { useToast } from '@/components/ui/toast';
-
-type HistoryRow = { id: string; date: string; type: string; amount: string; reference: string };
 
 export default function AgentFloatPage() {
   const { addToast } = useToast();
   const [agentId, setAgentId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState('NAD 0');
-  const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [history, setHistory] = useState<FloatHistoryRow[]>([]);
 
-  const loadBalance = () => {
+  const loadBalance = useCallback(() => {
     if (!agentId) return;
-    fetch(`/api/v1/agent/float?agent_id=${agentId}`)
+    fetch(`/api/v1/agent/float?agent_id=${agentId}`, { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => setBalance(json.float_balance != null ? `NAD ${Number(json.float_balance).toLocaleString()}` : 'NAD 0'))
       .catch(() => setBalance('NAD 0'));
-  };
+  }, [agentId]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch('/api/v1/agents?limit=1')
+    fetch('/api/v1/agents?limit=1', { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return null;
@@ -48,8 +44,8 @@ export default function AgentFloatPage() {
       .then((id) => {
         if (cancelled || !id) return;
         return Promise.all([
-          fetch(`/api/v1/agent/float?agent_id=${id}`).then((r) => r.json()),
-          fetch(`/api/v1/agent/float/history?agent_id=${id}&page=1&limit=50`).then((r) => r.json()),
+          fetch(`/api/v1/agent/float?agent_id=${id}`, { credentials: 'include' }).then((r) => r.json()),
+          fetch(`/api/v1/agent/float/history?agent_id=${id}&page=1&limit=50`, { credentials: 'include' }).then((r) => r.json()),
         ]);
       })
       .then((results) => {
@@ -71,19 +67,17 @@ export default function AgentFloatPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const handleRequest = async () => {
-    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) { addToast('Enter a valid amount.', 'error'); return; }
+  const handleRequest = async (amount: number) => {
     if (!agentId) { addToast('No agent loaded.', 'error'); return; }
     try {
       const res = await fetch('/api/v1/agent/float/request', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, amount: Number(amount) }),
+        body: JSON.stringify({ agent_id: agentId, amount }),
       });
       const json = await res.json();
       if (!res.ok) { addToast(json.error ?? 'Request failed.', 'error'); return; }
-      setModalOpen(false);
-      setAmount('');
       addToast('Top-up request submitted. Ketchup ops will be notified.', 'success');
       loadBalance();
     } catch { addToast('Request failed.', 'error'); }
@@ -96,17 +90,7 @@ export default function AgentFloatPage() {
       <div className="flex gap-2">
         <Button onClick={() => setModalOpen(true)}>Request top-up</Button>
       </div>
-      <Card>
-        <CardHeader><CardTitle>Float history</CardTitle></CardHeader>
-        <CardContent>
-          <DataTable
-            columns={[{ key: 'date', header: 'Date' }, { key: 'type', header: 'Type' }, { key: 'amount', header: 'Amount' }, { key: 'reference', header: 'Reference' }]}
-            data={history}
-            keyExtractor={(r) => r.id}
-            emptyMessage={loading ? 'Loading…' : 'No history.'}
-          />
-        </CardContent>
-      </Card>
+      <FloatHistory data={history} loading={loading} />
       <Card>
         <CardHeader><CardTitle>Settlement statement</CardTitle></CardHeader>
         <CardContent>
@@ -114,7 +98,7 @@ export default function AgentFloatPage() {
           <Button variant="outline" size="sm" className="mt-2" onClick={async () => {
             if (!agentId) { addToast('No agent loaded.', 'error'); return; }
             try {
-              const res = await fetch(`/api/v1/agent/settlement?agent_id=${agentId}`);
+              const res = await fetch(`/api/v1/agent/settlement?agent_id=${agentId}`, { credentials: 'include' });
               const json = await res.json();
               const date = json.date ?? new Date().toISOString().slice(0, 10);
               const csv = `date,agent_id,total_cashout,total_fees,transaction_count\n${date},${json.agent_id ?? agentId},${json.total_cashout ?? '0'},${json.total_fees ?? '0'},${json.transaction_count ?? 0}`;
@@ -132,15 +116,7 @@ export default function AgentFloatPage() {
           }}>Download CSV</Button>
         </CardContent>
       </Card>
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Request top-up">
-        <div className="space-y-4">
-          <Input label="Amount (NAD)" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 5000" />
-          <div className="modal-action">
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleRequest}>Submit request</Button>
-          </div>
-        </div>
-      </Modal>
+      <FloatRequestForm open={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleRequest} />
     </div>
   );
 }

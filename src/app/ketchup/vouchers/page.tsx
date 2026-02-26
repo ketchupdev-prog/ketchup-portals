@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
+import { portalFetch } from '@/lib/portal-fetch';
 import { VoucherTable, type VoucherRow } from '@/components/ketchup/voucher-table';
 import { IssueVoucherModal } from '@/components/ketchup/issue-voucher-modal';
 import { Alert } from '@/components/ui/alert';
@@ -57,7 +58,7 @@ export default function VouchersPage() {
     params.set('page', '1');
     params.set('limit', '100');
     if (statusFilter) params.set('status', statusFilter);
-    fetch(`/api/v1/vouchers?${params.toString()}`)
+    portalFetch(`/api/v1/vouchers?${params.toString()}`)
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -81,7 +82,7 @@ export default function VouchersPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/v1/vouchers/expiring-soon')
+    portalFetch('/api/v1/vouchers/expiring-soon')
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;

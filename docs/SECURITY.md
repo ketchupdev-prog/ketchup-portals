@@ -26,6 +26,7 @@ Guidance for securing the Ketchup Portals API and addressing common vulnerabilit
 - **Current state:** Auth is optional. When `NEXT_PUBLIC_REQUIRE_AUTH=true`, middleware redirects unauthenticated users from portal routes to `/login`. Supabase Auth and RBAC are not yet wired.
 - **API routes:** Most `/api/v1/*` routes do not enforce auth. Sensitive operations (e.g. issue voucher, adjust float, cron) should be protected when auth is implemented (e.g. JWT + role checks).
 - **Cron:** `POST /api/v1/sms/process` is protected by `CRON_SECRET` (or `SMS_CRON_SECRET`): request must send `Authorization: Bearer <secret>` when the env var is set.
+- **Session cookie (portal-auth):** Set by login route with `portalAuthCookieValue()`: HttpOnly, Secure (in production), SameSite=Lax, Path=/, Max-Age=expires_in. See PRD §7.5 and `docs/PROFILE_AND_SETTINGS.md` §2.1.
 
 ---
 
@@ -33,6 +34,7 @@ Guidance for securing the Ketchup Portals API and addressing common vulnerabilit
 
 - **Current state:** In-memory rate limiting is implemented for auth and SMS (Rule 16).
   - **POST /api/v1/auth/login:** 10 requests per minute per IP.
+  - **POST /api/v1/auth/change-password:** 10 requests per minute **per authenticated user** (not per IP). Key: `change-password:user:<userId>`.
   - **POST /api/v1/beneficiaries/bulk-sms:** 20 requests per minute per IP.
   - **POST /api/v1/beneficiaries/[id]/sms:** 20 requests per minute per IP.
   - Implementation: `src/lib/rate-limit.ts` (per-instance store; returns 429 with `Retry-After` when over limit).
@@ -51,6 +53,9 @@ Guidance for securing the Ketchup Portals API and addressing common vulnerabilit
 
 - **Structured logging:** Use `src/lib/logger.ts` (logger.info/warn/error) with route and context. Do not log passwords, full tokens, or full PII (e.g. full ID numbers, full phone numbers). Log enough for debugging (e.g. route, error message, non-PII identifiers).
 - **5xx responses:** When returning 500, pass the route into `jsonError(..., 500, ROUTE)` so the logger can record the failing route.
+- **Audit logs:** When writing to `audit_logs.old_data` / `new_data`, redact PII (e.g. beneficiary name, phone, email) for entity types that contain it; store only entity_type, entity_id, and non-sensitive field names/values. See PRD Audit Finding 3.4.
+
+**ENCRYPTION_KEY (optional env):** Reserved for column-level encryption of sensitive PII via pgcrypto or application-layer encryption. If implemented: document which columns are encrypted and key rotation (PRD §12, §17).
 
 ---
 

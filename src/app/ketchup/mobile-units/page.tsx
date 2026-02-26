@@ -39,8 +39,8 @@ export default function MobileUnitsPage() {
   const fetchAssets = () => {
     setLoading(true);
     Promise.all([
-      fetch('/api/v1/assets?type=mobile_unit&limit=100').then((r) => r.json()),
-      fetch('/api/v1/assets?type=atm&limit=100').then((r) => r.json()),
+      fetch('/api/v1/assets?type=mobile_unit&limit=100', { credentials: 'include' }).then((r) => r.json()),
+      fetch('/api/v1/assets?type=atm&limit=100', { credentials: 'include' }).then((r) => r.json()),
     ])
       .then(([uRes, aRes]) => {
         setUnits(uRes.data ?? []);
@@ -62,6 +62,7 @@ export default function MobileUnitsPage() {
     setSubmitting(true);
     try {
       const res = await fetch('/api/v1/assets', {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

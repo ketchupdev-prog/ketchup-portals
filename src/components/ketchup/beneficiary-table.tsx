@@ -11,6 +11,7 @@ import { SearchHeader } from '@/components/ui/search-header';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { REGION_SELECT_OPTIONS } from '@/lib/regions';
 
 export interface BeneficiaryRow {
   id: string;
@@ -39,15 +40,6 @@ export interface BeneficiaryTableProps {
   onExportCSV?: () => void;
   onSendSMSReminder?: () => void;
 }
-
-const REGIONS = [
-  { value: '', label: 'All regions' },
-  { value: 'Khomas', label: 'Khomas' },
-  { value: 'Erongo', label: 'Erongo' },
-  { value: 'Otjozondjupa', label: 'Otjozondjupa' },
-  { value: 'Oshana', label: 'Oshana' },
-  { value: 'Other', label: 'Other' },
-];
 
 const VERIFICATION_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -115,7 +107,7 @@ export function BeneficiaryTable(props: BeneficiaryTableProps) {
       />
       <div className="flex flex-wrap gap-3 items-end mb-4">
         <Select
-          options={REGIONS}
+          options={REGION_SELECT_OPTIONS}
           value={regionFilter}
           onChange={(e) => onRegionFilterChange?.(e.target.value)}
           inputSize="sm"

@@ -44,7 +44,7 @@ export function BeneficiaryAdvanceLedgerTab({ beneficiaryId }: BeneficiaryAdvanc
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/v1/beneficiaries/${beneficiaryId}/advance-ledger`)
+    fetch(`/api/v1/beneficiaries/${beneficiaryId}/advance-ledger`, { credentials: 'include' })
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
