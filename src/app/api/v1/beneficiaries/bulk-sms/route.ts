@@ -1,40 +1,51 @@
 /**
  * POST /api/v1/beneficiaries/bulk-sms – Queue SMS to multiple beneficiaries.
- * Body: { beneficiary_ids: string[], message?: string }
- * Skips opted-out users. Roles: ketchup_ops (no RBAC yet).
- * Rate limited per IP (docs/SECURITY.md §4).
+ * Body: { data: { beneficiary_ids: string[], message?: string } } or flat. Skips opted-out users.
+ * Roles: ketchup_ops (RBAC enforced: beneficiaries.sms permission).
+ * Open Banking–aligned: root { data } and { errors }.
  */
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { users, smsQueue } from "@/db/schema";
 import { inArray } from "drizzle-orm";
-import { jsonError } from "@/lib/api-response";
+import { jsonSuccess, jsonErrorOpenBanking } from "@/lib/api-response";
 import { validateBody, schemas } from "@/lib/validate";
 import { logger } from "@/lib/logger";
-import { checkRateLimit, getClientKey } from "@/lib/rate-limit";
+import { parseRootData } from "@/lib/open-banking";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { getPortalSession } from "@/lib/portal-auth";
+import { createAuditLogFromRequest } from "@/lib/services/audit-log-service";
 
 const ROUTE = "POST /api/v1/beneficiaries/bulk-sms";
-const SMS_RATE_LIMIT = 20; // requests per minute per IP
+
 const DEFAULT_BULK_MESSAGE =
   "Ketchup SmartPay: Please complete your proof-of-life at an agent. Reply STOP to opt out of SMS.";
 
 export async function POST(request: NextRequest) {
   try {
-    const key = getClientKey(request);
-    const { allowed, resetAt } = checkRateLimit(`bulk-sms:${key}`, SMS_RATE_LIMIT);
-    if (!allowed) {
-      const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
-      return Response.json(
-        { error: "Too many SMS requests", code: "RateLimitExceeded" },
-        { status: 429, headers: { "Retry-After": String(retryAfter) } }
-      );
-    }
+    // RBAC: Require beneficiaries.sms permission (SEC-001)
+    const auth = await requirePermission(request, "beneficiaries.sms", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Bulk SMS operations (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.BULK_SMS);
+    if (rateLimitResponse) return rateLimitResponse;
 
     const body = await request.json().catch(() => ({}));
-    const validation = validateBody(schemas.bulkSms, body);
+    const parsed = parseRootData<Record<string, unknown>>(body);
+    const raw = !("error" in parsed) && parsed.data != null && typeof parsed.data === "object"
+      ? (parsed.data as Record<string, unknown>)
+      : (body as Record<string, unknown>);
+    const validation = validateBody(schemas.bulkSms, raw);
     if (!validation.success) {
-      return jsonError(validation.error, "ValidationError", validation.details, 400);
+      return jsonErrorOpenBanking(
+        validation.error,
+        "ValidationError",
+        400,
+        { field: validation.details?.field as string }
+      );
     }
     const { beneficiary_ids: ids, message: msg } = validation.data;
     const message = msg?.trim() || DEFAULT_BULK_MESSAGE;
@@ -48,11 +59,14 @@ export async function POST(request: NextRequest) {
     const toSend = eligible.filter((u) => u.smsOptOut !== true);
 
     if (toSend.length === 0) {
-      return Response.json({
-        queued: 0,
-        skipped: uniqueIds.length,
-        message: "No eligible beneficiaries (all opted out or not found).",
-      });
+      return jsonSuccess(
+        {
+          queued: 0,
+          skipped: uniqueIds.length,
+          message: "No eligible beneficiaries (all opted out or not found).",
+        },
+        { status: 200 }
+      );
     }
 
     const rows = toSend.map((u) => ({
@@ -64,15 +78,34 @@ export async function POST(request: NextRequest) {
 
     await db.insert(smsQueue).values(rows);
 
-    return Response.json({
-      queued: toSend.length,
-      skipped: uniqueIds.length - toSend.length,
-      message: `${toSend.length} SMS queued.`,
-    }, { status: 201 });
+    // Audit logging: Bulk SMS operation (SEC-002)
+    const session = getPortalSession(request);
+    if (session) {
+      await createAuditLogFromRequest(request, session, {
+        action: 'beneficiary.sms_sent',
+        resourceType: 'beneficiary',
+        resourceId: uniqueIds[0],
+        metadata: {
+          count: toSend.length,
+          skipped: uniqueIds.length - toSend.length,
+          totalRequested: uniqueIds.length,
+          message: message.substring(0, 100),
+        },
+      });
+    }
+
+    return jsonSuccess(
+      {
+        queued: toSend.length,
+        skipped: uniqueIds.length - toSend.length,
+        message: `${toSend.length} SMS queued.`,
+      },
+      { status: 201 }
+    );
   } catch (err) {
     logger.error(ROUTE, err instanceof Error ? err.message : "Internal server error", {
       name: err instanceof Error ? err.name : undefined,
     });
-    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
+    return jsonErrorOpenBanking("Internal server error", "InternalError", 500, { route: ROUTE });
   }
 }

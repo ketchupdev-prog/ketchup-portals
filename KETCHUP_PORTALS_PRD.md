@@ -1,4 +1,4 @@
-# Ketchup Portals – Product Requirements Document (v1.4.2)
+# Ketchup Portals – Product Requirements Document (v1.4.7)
 
 **Ketchup Software Solutions**  
 **Ecosystem:** Government-to-Person (G2P) – Operations, Compliance & Field Management  
@@ -15,7 +15,17 @@ This document defines the functional and technical requirements for the four web
 
 **Changes in v1.4.1:** (1) **Namibia’s 14 administrative regions** – All region filters, dropdowns, and the `region` query parameter use a single source of truth (`src/lib/regions.ts`). List APIs (beneficiaries, agents, duplicate-redemptions, vouchers/duplicates) validate `region` and return 400 for invalid values. (2) **Notification preferences applied when sending** – Float approval/rejection and task-assignment flows respect `portal_user_preferences` (notification_preferences) before sending SMS; in-app notifications are still created. See §7.4, §8.2 and `src/lib/services/notification-preferences.ts`.
 
-**Changes in v1.4.2:** (1) **Implementation validation** – Full codebase build (Next.js production build) passes; TypeScript and all routes compile. (2) **Portal components implemented** – All portal-specific components in **COMPONENT_INVENTORY.md** (§11) are implemented and wired in their respective portals; **PENDING_COMPONENTS_TASKS.md** tasks are marked Done. (3) **Real API data only** – No mocks or placeholder data: Ketchup (reconciliation, audit, network map, app analytics, USSD viewer), Government (dashboard, unverified, voucher monitor, audit report generator, programme form), Agent (dashboard, float history/request, transactions, parcels, commission statement), and Field Ops (assets, asset detail, tasks, maintenance log, route planner, activity report) consume live APIs. (4) **API additions** – GET `/api/v1/reconciliation/daily` returns `transaction_entries`; GET `/api/v1/field/reports/activity` returns `tasks_completed`, `maintenance_logs`, `assets_visited`, `activity_rows` from DB; GET `/api/v1/field/route` returns `stops`; GET `/api/v1/analytics/mau` returns monthly active users. See §15.1.
+**Changes in v1.4.2:** (1) **Implementation validation** – Full codebase build (Next.js production build) passes; TypeScript and all routes compile. (2) **Portal components implemented** – All portal-specific components in **docs/architecture/COMPONENT_INVENTORY.md** (§11) are implemented and wired in their respective portals; **PENDING_COMPONENTS_TASKS.md** tasks are marked Done. (3) **Real API data only** – No mocks or placeholder data: Ketchup (reconciliation, audit, network map, app analytics, USSD viewer), Government (dashboard, unverified, voucher monitor, audit report generator, programme form), Agent (dashboard, float history/request, transactions, parcels, commission statement), and Field Ops (assets, asset detail, tasks, maintenance log, route planner, activity report) consume live APIs. (4) **API additions** – GET `/api/v1/reconciliation/daily` returns `transaction_entries`; GET `/api/v1/field/reports/activity` returns `tasks_completed`, `maintenance_logs`, `assets_visited`, `activity_rows` from DB; GET `/api/v1/field/route` returns `stops`; GET `/api/v1/analytics/mau` returns monthly active users. See §15.1.
+
+**Changes in v1.4.3:** (1) **Documentation alignment** – Clarified API URL layout: versioned business APIs under `/api/v1/...`, operational `/api/health/*` and `/api/cron/*` with optional `/api/v1/...` aliases via `next.config.ts` rewrites; distinguished **`/api/v1/auth/login`** (portal_users session) from **`/api/auth/*`** (Neon Auth) and optional Supabase cookies; component inventory canonical path **docs/architecture/COMPONENT_INVENTORY.md**; historical P0/RBAC reports moved to **docs/archive/**. No change to functional MVP scope.
+
+**Changes in v1.4.4:** (1) **SmartPay Copilot (ecosystem)** – Documented **SmartPay Copilot** as the beneficiary-facing AI assistant in the shared SmartPay stack (backend / Buffr G2P / AI services), distinct from Ketchup Portals. (2) **Monitoring scope** – §23 extended with §23.1: Copilot is **out of scope for v1 portal UI** (no dedicated Copilot stats screen); ops monitoring uses shared backend observability until admin APIs or dashboards are specified. (3) **Integration context** – §11 notes Copilot alongside mobile/USSD. No change to functional MVP scope for portal features.
+
+**Changes in v1.4.5:** (1) **DNS & env single source of truth** – §17 adds **`BUFFR_API_URL`**, **`BUFFR_API_KEY`**, **`NEXT_PUBLIC_PORTAL_URL`**, **`CRON_SECRET`** (and documents **`api.ketchup.cc`** vs optional **`backend.ketchup.cc`**). (2) **[docs/DNS_AND_REDIRECTS.md](docs/DNS_AND_REDIRECTS.md)** is the **canonical / most current** operational doc for DNS, redirects, Vercel matrix, and cross-repo env alignment; **[docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md](docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md)** is a companion summary. (3) **§18** defers operational detail to **DNS_AND_REDIRECTS.md** (per-bank `*.ketchup.cc`, redirect URI policy, Buffr **`fintech/`** alignment). (4) **§18.1** clarifies Vercel root for this app (`ketchup-portals/`) and `npm run build`. No change to functional MVP scope.
+
+**Changes in v1.4.6:** (1) **§18.4** — Cross-link to monorepo-root **[`FULL_ECOSYSTEM_INTEGRATION_2026-03-22.md`](../../FULL_ECOSYSTEM_INTEGRATION_2026-03-22.md)** as ecosystem-wide summary (Buffr AIS Platform, OIDC, SmartPay mobile). No change to functional MVP scope.
+
+**Changes in v1.4.7:** (1) **§18.4** — Ecosystem paragraph extended: explicit cross-link to **Smartpay Mobile** [`fintech/apps/smartpay-mobile/SMARTPAY_MOBILE_FLOWS_AND_STATE.md`](../../fintech/apps/smartpay-mobile/SMARTPAY_MOBILE_FLOWS_AND_STATE.md) §14 (OBS/OAuth), **`@buffr/connect-sdk` vs `@buffr/sdk`**, and **bank-simulator** branding/build notes per root integration guide. (2) No change to functional MVP scope.
 
 ---
 
@@ -64,6 +74,7 @@ This document defines the functional and technical requirements for the four web
 21. [API Pagination, Filtering & Validation](#21-api-pagination-filtering--validation)
 22. [Testing Strategy](#22-testing-strategy)
 23. [Monitoring & Logging](#23-monitoring--logging)
+    - 23.1 [SmartPay Copilot (ecosystem observability)](#231-smartpay-copilot-ecosystem-observability)
 24. [Backup & Disaster Recovery](#24-backup--disaster-recovery)
 25. [User Onboarding & 2FA Setup](#25-user-onboarding--2fa-setup)
 26. [Appendix A: Implementation Code Reference & MCP Documentation](#26-appendix-a-implementation-code-reference--mcp-documentation)
@@ -103,7 +114,7 @@ All portals are built on a **single source of truth** – the Ketchup SmartPay b
 | **Authentication** | Supabase Auth (email/password, magic link, OAuth) – integrates with PostgreSQL user management |
 | **Database** | Neon (PostgreSQL) – serverless, scalable, with branching for dev/test |
 | **ORM / Query** | Prisma or Drizzle ORM – type‑safe database access |
-| **Styling** | Tailwind CSS + shadcn/ui – pre‑built accessible components |
+| **Styling** | Tailwind CSS (v4) + **DaisyUI** (v5) – configured in `src/app/globals.css` using `@import "tailwindcss";` + `@plugin "daisyui";` with brand/contrast overrides |
 | **State Management** | React Context + hooks (or Zustand for complex client state) |
 | **Real‑time** | Supabase Realtime – for live map updates (e.g., agent transactions, ATM status) |
 | **Maps** | Mapbox GL JS or Leaflet – integrated with backend location APIs |
@@ -178,13 +189,24 @@ Implementation: `app/page.tsx` composes `LandingHero`, `LandingOverview`, `Landi
 
 ### 2.4 Shared Component Library (All Portals)
 
-All four portals, the landing page, and the auth (login) flow use the **same shared component library**. Implementations must use the primitives and patterns defined in **COMPONENT_INVENTORY.md** so that branding, behaviour, and accessibility are consistent.
+All four portals, the landing page, and the auth (login) flow use the **same shared component library**. Implementations must use the primitives and patterns defined in **docs/architecture/COMPONENT_INVENTORY.md** so that branding, behaviour, and accessibility are consistent.
 
 - **Landing** (`/`): Uses §10 Landing components (Hero, Overview, Portals, CTA, Footer), which in turn use IOSButton, Card, Badge, Container, LogoMark.
 - **Auth** (`/login`, `/forgot-password`): Use **AuthHero** (compact hero with logo, title, subline, “Back to home”, “Choose your portal”), Card, Input, IOSButton. The auth layout wraps these pages with **LandingFooter** so every step shows portal links and a clear path to the respective portals. No custom form elements; all from the inventory.
 - **Header** (every portal): Uses BrandLogo (mark, `ketchup-logo.png`), UserNav, NotificationCenter. Same header component across Ketchup, Government, Agent, Field Ops.
 - **Sidebars**: Each of KetchupSidebar, GovernmentSidebar, AgentSidebar, FieldOpsSidebar uses BrandLogo (mark, `ketchup-logo.png`) in the sidebar header and DaisyUI menu for nav items.
-- **Portal pages**: All list and detail screens across Ketchup, Government, Agent, and Field Ops use Button/IOSButton, Card, DataTable, MetricCard, SectionHeader, Container, Input, Select, Modal, Toast, and related components from the inventory. New or refactored UI must use these primitives; see Appendix C (§28) for brand usage and COMPONENT_INVENTORY.md for the full list and “Extension to all portals” mapping.
+- **Portal pages**: All list and detail screens across Ketchup, Government, Agent, and Field Ops use Button/IOSButton, Card, DataTable, MetricCard, SectionHeader, Container, Input, Select, Modal, Toast, and related components from the inventory. New or refactored UI must use these primitives; see Appendix C (§28) for brand usage and docs/architecture/COMPONENT_INVENTORY.md for the full list and “Extension to all portals” mapping.
+
+### 2.5 UX/UI requirements (practical)
+
+All portal UI must be implemented using the shared **DaisyUI + Tailwind** primitives in `docs/architecture/COMPONENT_INVENTORY.md` to keep styling, behavior, and accessibility consistent across Ketchup/Government/Agent/Field Ops. Tailwind/DaisyUI are configured via `src/app/globals.css` (Tailwind v4 + DaisyUI plugin), and any custom CSS must remain scoped and compatible with DaisyUI theme variables.
+
+- **Navigation simplicity**: Keep sidebar primary sections limited (aim for **5–7** items per section). Use collapsible groups for advanced/admin items.
+- **Theme & contrast**: Respect the existing global theme variables and contrast overrides in `globals.css` (e.g. Ketchup Forest `#226644`, high-contrast table headers). New UI must not reintroduce low-contrast muted text or faint table headings.
+- **Click targets (web)**: Minimum interactive target size **32×32px** for icon buttons and menu items; primary actions use larger DaisyUI buttons with clear spacing.
+- **Loading & errors**: Use **skeleton loaders** for dashboards/tables and standard `ErrorState`/empty states per §19. Avoid spinner-only screens.
+- **Consistent layouts**: Reuse the same page patterns (list toolbar + filters, metric cards, detail header + tabs) across portals.
+- **Accessibility**: WCAG 2.1 AA baseline, keyboard navigation for menus/modals, visible focus states, and meaningful `aria-*` labels where needed.
 
 ---
 
@@ -1260,6 +1282,7 @@ Rate limit: same as login (e.g. 10 requests per minute per IP or per user).
 ## 11. Integration with Beneficiary Platform
 
 - The portals use the **same backend** as the mobile app and USSD. All data is stored in the shared PostgreSQL database.
+- **SmartPay Copilot** – Beneficiaries may interact with **SmartPay Copilot** (conversational AI for wallets, programmes, and support) through the beneficiary app and shared **SmartPay / Buffr** APIs and AI services. Copilot traffic, model calls, and safety metrics are owned by that stack; **Ketchup Portals v1 does not include a Copilot admin console**. Future releases may add read-only Copilot usage or quality metrics for ketchup_ops/compliance when backend contracts exist (see §23.1).
 - Authentication between portal frontend and backend is via **Supabase JWT**. The backend API validates the JWT and checks permissions (via RLS or middleware).
 - **Real‑time** is implemented via Supabase Realtime subscriptions on tables like `transactions`, `agent_float_transactions`, `asset_locations`.
 - **SMS notifications**: The portals trigger SMS via the existing SMS service used by the Beneficiary Platform (e.g., via a `sms_queue` table or external API). Example: when a float request is approved, send SMS to agent.
@@ -1306,7 +1329,7 @@ Rate limit: same as login (e.g. 10 requests per minute per IP or per user).
 ## 14. Localization & Accessibility
 
 - **Language support**: English as default. Additional languages (Afrikaans, Oshiwambo, etc.) are out of scope for v1; planned for v2 via i18n (e.g. next-i18next).
-- **Accessibility**: Use shadcn/ui components which are built with accessibility in mind. Add `aria` labels where needed. Test with screen readers.
+- **Accessibility**: Use **DaisyUI** components (with Tailwind) and ensure WCAG 2.1 AA compliance. Add `aria` labels where needed. Test with keyboard navigation and screen readers.
 
 ---
 
@@ -1317,7 +1340,7 @@ Rate limit: same as login (e.g. 10 requests per minute per IP or per user).
 The following has been validated:
 
 - **Build:** `npm run build` (Next.js production build) completes successfully; TypeScript compiles; all app and API routes are generated.
-- **Component inventory:** All portal-specific components listed in **COMPONENT_INVENTORY.md** (§11 – Ketchup, Government, Agent, Field Ops) are implemented under `src/components/{ketchup,government,agent,field-ops}/` and exported from the respective index files.
+- **Component inventory:** All portal-specific components listed in **docs/architecture/COMPONENT_INVENTORY.md** (§11 – Ketchup, Government, Agent, Field Ops) are implemented under `src/components/{ketchup,government,agent,field-ops}/` and exported from the respective index files.
 - **Task list:** All tasks in **PENDING_COMPONENTS_TASKS.md** are marked Done; no pending component work remains for MVP.
 - **Data sources:** Portal pages use **real API endpoints only**. No mocks or placeholder data. Empty states use neutral fallbacks (e.g. "—", empty list) when the API returns null or empty. Key API usage:
   - **Ketchup:** Reconciliation (`GET /api/v1/reconciliation/daily` with `transaction_entries`), Audit (`GET /api/v1/audit-logs`), Network map (`GET /api/v1/assets/map`), App analytics (`GET /api/v1/analytics/dau`, `mau`, `channel-breakdown`, `redemption-rate`, `app-users`), USSD viewer (`GET /api/v1/ussd/sessions`, `sessions/[id]`).
@@ -1371,12 +1394,16 @@ The following environment variables must be set in `.env.local` (development) an
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | `eyJ...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (for admin operations) | `eyJ...` |
-| `NEXT_PUBLIC_APP_URL` | Public base URL (for emails, redirects) | `https://ketchup-portal.vercel.app` |
+| `BUFFR_API_URL` | Base URL for voucher sync, reconciliation, and Buffr/SmartPay integration APIs (usually the **shared backend**, not the Buffr Connect portal origin unless that is your gateway) | `https://api.ketchup.cc` (prod); local: match your SmartPay Node or Buffr Connect port per [docs/DNS_AND_REDIRECTS.md](docs/DNS_AND_REDIRECTS.md) |
+| `BUFFR_API_KEY` | Server-side key for authenticated calls to `BUFFR_API_URL` | (secret; never commit) |
+| `NEXT_PUBLIC_PORTAL_URL` | Canonical public URL of **this** portals app (password reset links, emails) | `https://portal.ketchup.cc` |
+| `NEXT_PUBLIC_APP_URL` | Legacy / generic public base URL; prefer **`NEXT_PUBLIC_PORTAL_URL`** for portal-specific links when both are set | `https://portal.ketchup.cc` |
+| `CRON_SECRET` | Bearer secret for secured cron endpoints (e.g. SMS processing); alias `SMS_CRON_SECRET` accepted per `src/lib/env.ts` | (secret) |
 | `SMTP_HOST` | SMTP server for emails (password reset, notifications) | `smtp.gmail.com` |
 | `SMTP_PORT` | SMTP port | `587` |
 | `SMTP_USER` | SMTP username | `user@example.com` |
 | `SMTP_PASS` | SMTP password | `secret` |
-| `SMTP_FROM` | From email address | `no-reply@ketchup.cc` |
+| `SMTP_FROM` | From email address | `no-reply@ketchup.cc` (support/contact mailbox: `ichigo@ketchup.cc`) |
 | `ENCRYPTION_KEY` | 32‑byte hex key for PII encryption (see §12). Generate with: `openssl rand -hex 32`. Store securely; rotate per security policy. | 64-character hex string |
 | `SMS_API_URL` | URL of SMS service (e.g., `https://api.ketchup.cc/sms`) | `https://api.ketchup.cc` |
 | `SMS_API_KEY` | API key for SMS service | `smartpay_...` |
@@ -1392,7 +1419,7 @@ The following environment variables must be set in `.env.local` (development) an
 
 1. Push code to GitHub repository.
 2. Import project in Vercel (use `ketchup-portals` as project name).
-3. Set root directory to `/` (monorepo root) and build command: `cd ../.. && pnpm build` (if using pnpm workspaces) or adjust as needed.
+3. Set **Root Directory** to **`ketchup-smartpay/ketchup-portals`** when the repo is the wider monorepo, or to **`/`** when this app is the repo root. **Build:** `npm run build` (see root `package.json`); do not assume pnpm unless the project adds a workspace root.
 4. Add all environment variables from §17 in Vercel project settings.
 5. Deploy.
 
@@ -1403,23 +1430,28 @@ The following environment variables must be set in `.env.local` (development) an
 
 ### 18.3 Custom Domain
 
-- Configure custom domains in Vercel for each portal (e.g., `ketchup.example.com`, `gov.example.com`, `agent.example.com`, `field.example.com`).
-- Update `NEXT_PUBLIC_APP_URL` accordingly.
+- Configure custom domains in Vercel: **portal.ketchup.cc** (portals app); optionally **admin.ketchup.cc**, **gov.ketchup.cc**, **agent.ketchup.cc**, **mobile.ketchup.cc** for per-portal subdomains (redirect `/` to that portal). See [docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md](docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md).
+- Update `NEXT_PUBLIC_APP_URL` or `NEXT_PUBLIC_PORTAL_URL` to the portal app URL (e.g. `https://portal.ketchup.cc`).
 
 ### 18.4 DNS Configuration
 
-All CNAME records already exist in Namecheap:
+**Canonical deep-dive (authoritative):** [docs/DNS_AND_REDIRECTS.md](docs/DNS_AND_REDIRECTS.md) — per-portal auth URLs, `*.ketchup.cc` bank AIS/OAuth sites (separate Vercel projects + Neon DBs), **`api.ketchup.cc`** vs optional **`backend.ketchup.cc`**, redirect URI allowlists, alignment table for **Buffr Connect** (`buffr-connect/`) and **SmartPay** (`fintech/`), and Namecheap/Vercel cutover order. **This PRD §18.4 does not duplicate that file;** update **DNS_AND_REDIRECTS.md** first, then refresh summary tables here or in **DOMAIN_AND_ENV_RECOMMENDATIONS.md** if needed.
 
-| Host | Type | Value | Status |
-|------|------|-------|--------|
-| `app` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
-| `gov` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
-| `portal` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
-| `agent` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
-| `mobile` | CNAME | `cname.vercel-dns.com` | ✓ Configured |
-| `api` | CNAME | `[railway-app].railway.app` | ✓ Configured |
+**Ecosystem-wide summary (cross-stack):** [`FULL_ECOSYSTEM_INTEGRATION_2026-03-22.md`](../../FULL_ECOSYSTEM_INTEGRATION_2026-03-22.md) (repository root) — v5.0 **buffrconnect / buffr-ais-platform / banks** split, OIDC/PAR flow, OIDC implementation notes (e.g. **`id_token`** vs discovery), Ketchup DNS recap, **`@buffr/connect-sdk`** vs internal **`@buffr/sdk`**, portal↔AIS duplication debt, deployment checklist. **Beneficiary mobile OBS:** [`fintech/apps/smartpay-mobile/SMARTPAY_MOBILE_FLOWS_AND_STATE.md`](../../fintech/apps/smartpay-mobile/SMARTPAY_MOBILE_FLOWS_AND_STATE.md) §14. **Buffr G2P PRD** §7.6 *Implementation alignment* and **Buffr Connect PRD** §7.4.1 should stay aligned with this §18 and the root integration guide.
 
-No DNS changes needed — just add domains in Vercel project settings.
+Summary — recommended domains (see also [docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md](docs/DOMAIN_AND_ENV_RECOMMENDATIONS.md)):
+
+| Host | Type | Value | Purpose |
+|------|------|-------|---------|
+| `app` | CNAME | (beneficiary app host) | app.ketchup.cc – beneficiary mobile/PWA |
+| `portal` | CNAME | `cname.vercel-dns.com` | portal.ketchup.cc – portals app |
+| `admin` | CNAME | `cname.vercel-dns.com` | admin.ketchup.cc – Ketchup portal (optional alias) |
+| `gov` | CNAME | `cname.vercel-dns.com` | gov.ketchup.cc – Government portal (optional alias) |
+| `agent` | CNAME | `cname.vercel-dns.com` | agent.ketchup.cc – Agent portal (optional alias) |
+| `mobile` | CNAME | `cname.vercel-dns.com` | mobile.ketchup.cc – Field Ops portal (optional alias; may be on another project) |
+| `api` | CNAME | (API host) | **api.ketchup.cc** – canonical public backend / `BUFFR_API_URL` target |
+
+Add each hostname in the correct Vercel project; DNS targets follow Vercel’s generated CNAME (e.g. `cname.vercel-dns.com` or project-specific).
 
 ---
 
@@ -1539,6 +1571,12 @@ All tests must be run in CI before deployment.
 | API latency | p50/p95/p99 for `/api/v1/portal/*` | p95 &lt; 2s for list endpoints |
 | Auth failures | 401/403 rate and failed login rate | Alert on brute-force pattern |
 | Portal page load | LCP for dashboard and list views | p95 &lt; 2s |
+
+### 23.1 SmartPay Copilot (ecosystem observability)
+
+- **What it is:** **SmartPay Copilot** is part of the **Ketchup SmartPay** beneficiary experience (AI-assisted support and wallet/programme guidance), implemented in the **shared backend / beneficiary app / AI service** layer—not as a module under `/ketchup` in this portal repo.
+- **v1 portal scope:** No requirement for Copilot dashboards, conversation review, or model metrics inside Ketchup Portals for MVP. Compliance and ops rely on **backend observability** (structured logs, trace tooling such as Langfuse where configured, AI proxy health) consistent with PSD‑12 and internal SOPs.
+- **Planned / v2 (non-binding):** Optional future work: aggregated Copilot metrics (sessions, error rate, latency, guardrail triggers) exposed via **`/api/v1/...`** for ketchup_ops or compliance, subject to privacy review (no PII in admin-facing aggregates). Until then, document runbooks that point operators to the **AI service** and **api.ketchup.cc** monitoring.
 
 ---
 
@@ -3539,7 +3577,7 @@ This mark represents **clarity, trust, and connectivity** in G2P payments—mode
 
 **Logo asset reference:** `ketchup-portal/public/ketchup-logo.png` — primary circular mark (Lime Green, Magenta, Royal Blue, Sunny Yellow quadrants; dark gray drop shadow).
 
-**Logo implementation across the application:** Use this asset consistently in (1) **Landing page** (`/`) — hero logo; (2) **Login page** — LogoMark above the sign-in card; (3) **Portal header** — BrandLogo (mark) left side of the navbar in all four portals; (4) **Portal sidebars** — BrandLogo (mark) in Ketchup, Government, Agent, and Field Ops sidebar headers, linking to that portal’s dashboard. This ensures a single, recognizable Ketchup SmartPay identity at every entry point and inside every portal. For the full mapping of components used across landing, auth, header, and all sidebars, see **COMPONENT_INVENTORY.md** (Extension to all portals) and PRD §2.4.
+**Logo implementation across the application:** Use this asset consistently in (1) **Landing page** (`/`) — hero logo; (2) **Login page** — LogoMark above the sign-in card; (3) **Portal header** — BrandLogo (mark) left side of the navbar in all four portals; (4) **Portal sidebars** — BrandLogo (mark) in Ketchup, Government, Agent, and Field Ops sidebar headers, linking to that portal’s dashboard. This ensures a single, recognizable Ketchup SmartPay identity at every entry point and inside every portal. For the full mapping of components used across landing, auth, header, and all sidebars, see **docs/architecture/COMPONENT_INVENTORY.md** (Extension to all portals) and PRD §2.4.
 
 ---
 
@@ -4601,7 +4639,7 @@ Use `DashboardCard` (Card + left border variant, value/change/icon), `DataTable`
 **Ketchup SmartPay Brand Guidelines**
 *Powering the G2P Economy*
 
-**ketchup.cc** · app.ketchup.cc · gov.ketchup.cc · api.ketchup.cc
+**ketchup.cc** · app.ketchup.cc · portal.ketchup.cc · admin.ketchup.cc · gov.ketchup.cc · agent.ketchup.cc · mobile.ketchup.cc · api.ketchup.cc
 
 ---
 
@@ -4638,14 +4676,14 @@ Before handing off to development, confirm:
 | 6 | Permissions §20 cover all routes including GET /portal/me, change-password, GET/PATCH preferences. | ✓ |
 | 7 | Environment variables §17: ENCRYPTION_KEY generation, SENTRY_DSN and NEXT_PUBLIC_SENTRY_DSN documented. | ✓ |
 | 8 | Testing §22: per-feature coverage (auth, Profile & Settings, float, duplicate redemptions, advance recovery) and E2E journeys specified. | ✓ |
-| 9 | Monitoring §23: key metrics (duplicate rate, float response time, advance recovery rate, API latency, auth failures, LCP) defined. | ✓ |
+| 9 | Monitoring §23 (and §23.1 SmartPay Copilot ecosystem observability): key metrics (duplicate rate, float response time, advance recovery rate, API latency, auth failures, LCP) defined; Copilot monitoring via shared backend until portal admin APIs exist. | ✓ |
 | 10 | Dashboard and UI code examples use real data fetching (e.g. GET /api/v1/portal/dashboard/summary), LoadingState, ErrorState; no placeholder "—" or "Load from API". | ✓ |
 
 **v1.4 is the single source of truth for MVP development. Development team can begin Phase 1 with confidence.**
 
 ---
 
-**Document version:** 1.4  
-**Last updated:** March 2026  
+**Document version:** 1.4.4  
+**Last updated:** 2026-03-21  
 **Owner:** Ketchup Software Solutions – Product Team  
 **Next steps:** Review with stakeholders, finalize API contracts, begin Phase 1.

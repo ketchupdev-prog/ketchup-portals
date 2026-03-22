@@ -5,3 +5,4 @@
 
 export { PortalLoginForm } from './PortalLoginForm';
 export { PortalForgotForm } from './PortalForgotForm';
+export { PortalResetPasswordForm } from './PortalResetPasswordForm';

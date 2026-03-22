@@ -1,7 +1,7 @@
 /**
- * GET /api/v1/vouchers – List vouchers (paginated).
- * POST /api/v1/vouchers/issue – Issue single voucher (body: beneficiary_id, programme_id, amount, expiry_date).
- * Roles: ketchup_*, gov_* for GET; ketchup_ops for POST issue.
+ * GET /api/v1/vouchers – List vouchers (paginated, filterable).
+ * Roles: ketchup_*, gov_* (RBAC enforced: vouchers.list permission).
+ * Response shape: { data, meta, links } per docs/DATABASE_AND_API_DESIGN.md.
  */
 
 import { NextRequest } from "next/server";
@@ -13,12 +13,22 @@ import {
   jsonError,
 } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 const ROUTE_GET = "GET /api/v1/vouchers";
 const basePath = "/api/v1/vouchers";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require vouchers.list permission (SEC-001)
+    const auth = await requirePermission(request, "vouchers.list", ROUTE_GET);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");

@@ -1,5 +1,7 @@
 /**
- * GET /api/v1/field/assets – List assets (field_tech, field_lead).
+ * GET /api/v1/field/assets – List field assets (paginated, filterable by status/type).
+ * Roles: field_tech, field_lead (RBAC enforced: field.assets permission).
+ * Secured: RBAC, rate limiting.
  */
 
 import { NextRequest } from "next/server";
@@ -7,11 +9,23 @@ import { db } from "@/lib/db";
 import { assets } from "@/db/schema";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { parsePagination, paginationLinks, jsonPaginated, jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
 const basePath = "/api/v1/field/assets";
+const ROUTE = "GET /api/v1/field/assets";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require field.assets permission (SEC-001)
+    const auth = await requirePermission(request, "field.assets", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");
@@ -45,7 +59,7 @@ export async function GET(request: NextRequest) {
     }));
     return jsonPaginated(data, meta, links);
   } catch (err) {
-    console.error("GET /api/v1/field/assets error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

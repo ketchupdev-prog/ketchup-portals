@@ -1,7 +1,7 @@
 /**
  * GET  /api/v1/vouchers/duplicates/{id} – Get single duplicate event.
  * PATCH /api/v1/vouchers/duplicates/{id} – Update status / resolution notes (PRD §3.3.11).
- * Roles: ketchup_compliance, ketchup_finance.
+ * Roles: ketchup_compliance, ketchup_finance (RBAC enforced: duplicate_redemptions.list for GET, duplicate_redemptions.resolve for PATCH).
  */
 
 import { NextRequest } from "next/server";
@@ -12,6 +12,10 @@ import {
 } from "@/lib/services/duplicate-redemption-service";
 import { jsonError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { getPortalSession } from "@/lib/portal-auth";
+import { createAuditLogFromRequest } from "@/lib/services/audit-log-service";
 
 const VALID_STATUSES: DuplicateEventStatus[] = [
   "advance_posted",
@@ -22,11 +26,19 @@ const VALID_STATUSES: DuplicateEventStatus[] = [
 ];
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const ROUTE = "GET /api/v1/vouchers/duplicates/[id]";
   try {
+    // RBAC: Require duplicate_redemptions.list permission (SEC-001)
+    const auth = await requirePermission(request, "duplicate_redemptions.list", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { id } = await params;
     const event = await getDuplicateEvent(id);
     if (!event) {
@@ -47,6 +59,14 @@ export async function PATCH(
 ) {
   const ROUTE = "PATCH /api/v1/vouchers/duplicates/[id]";
   try {
+    // RBAC: Require duplicate_redemptions.resolve permission (SEC-001)
+    const auth = await requirePermission(request, "duplicate_redemptions.resolve", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Admin endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.ADMIN);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { id } = await params;
     const body = await request.json().catch(() => null);
 
@@ -76,6 +96,20 @@ export async function PATCH(
 
     if (!updated) {
       return jsonError("Duplicate event not found", "NotFound", { id }, 404, ROUTE);
+    }
+
+    // Audit logging: Critical financial operation (SEC-002)
+    const session = getPortalSession(request);
+    if (session) {
+      await createAuditLogFromRequest(request, session, {
+        action: 'duplicate_redemption.resolve',
+        resourceType: 'duplicate_redemption',
+        resourceId: id,
+        metadata: {
+          ...(status && { status }),
+          ...(resolution_notes !== undefined && { resolution_notes }),
+        },
+      });
     }
 
     return Response.json({ success: true, data: updated });

@@ -1,6 +1,8 @@
 # Ketchup Portals – Database & API Design
 
-This document defines the **database schema** and **API specifications** for the Ketchup Portals app (part of the Ketchup SmartPay G2P ecosystem). It covers four web portals and the beneficiary platform. The design aligns with the **PRD v1.4** and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
+This document defines the **database schema** and **API specifications** for the Ketchup Portals app (part of the Ketchup SmartPay G2P ecosystem). It covers four web portals and the beneficiary platform. The design aligns with the **PRD** (current **v1.4.4**) and incorporates relevant principles from the **Namibian Open Banking Standards v1.0** (secure API design, OAuth2, consent, and participant management).
+
+**SmartPay Copilot:** Conversational AI for beneficiaries is provided by **SmartPay Copilot** in the **shared SmartPay backend / beneficiary app / AI services**. Copilot-specific tables or endpoints (e.g. chat proxy, trace IDs) live in that stack—not in the portal-only schema below—unless a future migration adds read-only aggregates for admin dashboards. Operators should use **PRD §23.1** and backend observability for Copilot health until portal APIs are specified.
 
 ---
 
@@ -355,9 +357,15 @@ Unique constraint on (portal_user_id, preference_key). Index on portal_user_id. 
 
 ## 3. API Endpoints
 
-Base URL: `https://api.ketchup.cc/api/v1` (local: `/api/v1`)
+### 3.0 Routing in this Next.js app
 
-All endpoints require authentication (Bearer JWT or mTLS client certificate) and appropriate role permissions.
+- **Business APIs** are implemented under `src/app/api/v1/...` and are reachable at **`/api/v1/...`** on the portal host (e.g. `https://portal.ketchup.cc/api/v1/...`).
+- **Operational endpoints** live at **`/api/health/*`** and **`/api/cron/*`** (`src/app/api/health`, `src/app/api/cron`). `next.config.ts` defines **afterFiles** rewrites so **`/api/v1/health/*`** and **`/api/v1/cron/*`** resolve to those same handlers when no file exists under `app/api/v1/health` or `app/api/v1/cron`. Prefer `/api/v1/...` for new clients where you want a single versioned namespace; keep using `/api/health` in probes if you rely on `vercel.json` cache headers keyed to that path.
+- **Neon Auth** uses **`/api/auth/*`** (catch-all). **`/api/v1/auth/login`** is the **portal_users** email/password login (cookie / Bearer)—do not confuse the two (see `docs/NEON_AUTH_SETUP.md`).
+
+Base URL (external docs / PRD style): `https://api.ketchup.cc/api/v1` — in the **portals monolith**, the same paths are usually `https://portal.ketchup.cc/api/v1` unless the API is split to a separate host.
+
+Most listed endpoints require a portal session (**`portal-auth`** cookie or **`Authorization: Bearer`**) and RBAC via `requirePermission`. Public exceptions include login, password reset request/confirm, and health probes as implemented.
 
 ### 3.1 Authentication & User Management
 
@@ -520,26 +528,29 @@ Out of scope for v1. Planned for v2: OAuth2 consent flows as per Open Banking st
 
 ## 4. Authentication & Authorization
 
-### 4.1 Portal User Authentication (JWT)
+### 4.1 Portal user authentication (as implemented)
 
-- Users authenticate via Supabase Auth (email/password, optional TOTP).
-- Upon login, a JWT is issued containing user ID, role, and permissions.
-- The JWT is included in the `Authorization: Bearer <token>` header for all API requests.
-- Middleware validates the token and checks role-based access for each route.
+- **`POST /api/v1/auth/login`** validates **`portal_users`** (bcrypt) and sets the **`portal-auth`** HTTP-only cookie. The response may include a bearer token for programmatic clients. API handlers resolve the session with **`getPortalSession`** and enforce permissions with **`requirePermission`** (`src/lib/portal-auth.ts`, `src/lib/require-permission.ts`).
+- **Optional Neon Auth:** **`/api/auth/*`** (Better Auth on Neon) is separate from `/api/v1/auth/login`. See `docs/NEON_AUTH_SETUP.md`.
+- **Optional Supabase:** `NEXT_PUBLIC_SUPABASE_*` and `SUPABASE_SERVICE_ROLE_KEY` support shared identity with Buffr Connect; **`sb-auth-token`** may satisfy middleware when integrated (`src/middleware.ts`).
 
-### 4.2 Machine-to-Machine (Client Credentials)
+### 4.2 Target model: Supabase / OAuth JWT (roadmap)
 
-For background jobs or service-to-service calls (e.g., mobile unit GPS updates), we use OAuth2 client credentials grant. Clients have a client ID and secret, and receive a short-lived JWT scoped to specific endpoints.
+- Consolidation may move primary login to Supabase Auth (email/password, TOTP) with JWT in `Authorization: Bearer` on every API request. Endpoint tables above remain valid; swap “session resolution” to the chosen IdP when adopted.
 
-### 4.3 Mutual TLS (mTLS)
+### 4.3 Machine-to-Machine (Client Credentials)
 
-As per Open Banking standards, all API communication between servers (e.g., between Ketchup backend and external systems) should use mTLS with client certificates. This ensures both parties are authenticated. Certificates are issued by a trusted Certificate Authority (e.g., within the scheme).
+For background jobs or service-to-service calls (e.g., mobile unit GPS updates), OAuth2 client credentials (client ID + secret, short-lived JWT scoped to endpoints) remains the design target for M2M.
 
-### 4.4 Role-Based Access Control (RBAC)
+### 4.4 Mutual TLS (mTLS)
 
-Permissions are enforced at the API level using middleware that checks the role claim in the JWT against the required roles for each endpoint (see tables above). Row-level security (RLS) in PostgreSQL ensures users can only access data they are permitted to see (e.g., an agent can only see their own data).
+As per Open Banking standards, server-to-server API communication should use mTLS with client certificates where participants require it.
 
-#### 4.4.1 RLS policy outline (PRD Audit §3.2)
+### 4.5 Role-Based Access Control (RBAC)
+
+Permissions are enforced in route handlers via **`requirePermission`** against DB-backed roles (see endpoint tables). Row-level security (RLS) in PostgreSQL can add a second layer (e.g., an agent sees only their own rows).
+
+#### 4.5.1 RLS policy outline (PRD Audit §3.2)
 
 When enabling RLS on Neon/Postgres, implement policies along these lines (exact SQL in migrations):
 

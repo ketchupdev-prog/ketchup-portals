@@ -1,5 +1,6 @@
 /**
- * GET /api/v1/programmes/:id/report – Generate PDF report (stub; returns JSON summary).
+ * GET /api/v1/programmes/:id/report – Generate programme report (JSON summary).
+ * Roles: gov_* with government.reports permission (RBAC enforced).
  */
 
 import { NextRequest } from "next/server";
@@ -7,15 +8,29 @@ import { db } from "@/lib/db";
 import { programmes, vouchers } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
+
+const ROUTE = "GET /api/v1/programmes/[id]/report";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // RBAC: Require government.reports permission (SEC-001)
+    const auth = await requirePermission(request, "government.reports", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { id } = await params;
     const prog = await db.select().from(programmes).where(eq(programmes.id, id)).limit(1).then((r) => r[0]);
-    if (!prog) return jsonError("Programme not found", "NotFound", { id }, 404);
+    if (!prog) return jsonError("Programme not found", "NotFound", { id }, 404, ROUTE);
+
     const stats = await db
       .select({
         total: sql<number>`count(*)::int`,
@@ -26,6 +41,7 @@ export async function GET(
       .from(vouchers)
       .where(eq(vouchers.programmeId, id))
       .then((r) => r[0]);
+
     return Response.json({
       programme_id: id,
       programme_name: prog.name,
@@ -38,7 +54,7 @@ export async function GET(
       generated_at: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("GET /api/v1/programmes/[id]/report error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

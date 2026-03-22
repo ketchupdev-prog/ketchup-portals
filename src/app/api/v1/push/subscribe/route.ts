@@ -1,17 +1,32 @@
 /**
  * POST /api/v1/push/subscribe – Register a push subscription (portal user or beneficiary).
+ * Auth: Session only (user subscribes their device).
  * Body: { portal_user_id?: string, user_id?: string, subscription: { endpoint, keys: { p256dh, auth } }, user_agent?: string }
  * PRD §7.4.1: Push for task assigned (field ops), proof-of-life (beneficiaries).
+ * Rate limited (50/min per user).
  */
 
 import { NextRequest } from "next/server";
 import { subscribePush } from "@/lib/services/push";
 import { jsonError } from "@/lib/api-response";
+import { getPortalSession } from "@/lib/portal-auth";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
 const ROUTE = "POST /api/v1/push/subscribe";
 
 export async function POST(request: NextRequest) {
   try {
+    // Session authentication: Verify user is logged in (SEC-001)
+    const session = getPortalSession(request);
+    if (!session) {
+      return jsonError("Unauthorized", "Unauthorized", undefined, 401, ROUTE);
+    }
+
+    // Rate limiting: ADMIN preset (50/min per user) (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.ADMIN);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const body = await request.json().catch(() => ({}));
     const portalUserId = body.portal_user_id ?? null;
     const userId = body.user_id ?? null;
@@ -40,10 +55,10 @@ export async function POST(request: NextRequest) {
       userAgent: request.headers.get("user-agent") ?? undefined,
     });
 
-    if (!id) return jsonError("Failed to save subscription", "InternalError", undefined, 500);
+    if (!id) return jsonError("Failed to save subscription", "InternalError", undefined, 500, ROUTE);
     return Response.json({ id }, { status: 201 });
   } catch (err) {
-    console.error(ROUTE, err);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Push subscribe error", { error: err });
     return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

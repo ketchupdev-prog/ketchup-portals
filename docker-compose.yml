@@ -1,0 +1,21 @@
+# Ketchup Portals – Docker Compose
+# App only:  docker compose up -d
+# With domains (Caddy proxy):  docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+# Env: pass via .env or docker compose --env-file .env up -d
+# Domains: portal.ketchup.cc, admin.ketchup.cc, gov.ketchup.cc, agent.ketchup.cc, mobile.ketchup.cc (point DNS at host; Caddy handles SSL).
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ketchup-portals:latest
+    container_name: ketchup-portals
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+    restart: unless-stopped 

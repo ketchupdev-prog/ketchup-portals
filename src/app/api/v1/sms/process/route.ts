@@ -1,6 +1,8 @@
 /**
  * POST /api/v1/sms/process – Process pending SMS queue (call from Vercel Cron or external worker).
- * Fetches up to N pending rows, calls sendSms(), updates status. Secured by CRON_SECRET or similar.
+ * Security: CRON_SECRET header validation (not RBAC - internal CRON job only).
+ * No rate limiting (internal process), no audit logging (automated).
+ * Fetches up to N pending rows, calls sendSms(), updates status.
  */
 
 import { NextRequest } from "next/server";
@@ -17,10 +19,13 @@ const BATCH_SIZE = 50;
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const secret = process.env.CRON_SECRET ?? process.env.SMS_CRON_SECRET;
-    if (secret && authHeader !== `Bearer ${secret}`) {
-      return jsonError("Unauthorized", "Unauthorized", undefined, 401);
+    // CRON secret verification: Verify x-cron-secret header (SEC-001)
+    const cronSecret = request.headers.get("x-cron-secret");
+    const expectedSecret = process.env.CRON_SECRET;
+    
+    if (!expectedSecret || cronSecret !== expectedSecret) {
+      logger.warn(ROUTE, "Invalid CRON secret", { hasSecret: !!cronSecret });
+      return jsonError("Unauthorized", "Unauthorized", undefined, 401, ROUTE);
     }
 
     const pending = await db

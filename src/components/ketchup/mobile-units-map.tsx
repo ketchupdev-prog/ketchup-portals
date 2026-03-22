@@ -13,19 +13,21 @@ const AssetMarker = dynamic(() => import('@/components/maps/asset-marker').then(
 
 const DEFAULT_CENTER: [number, number] = [-22.56, 17.08];
 
-const SAMPLE_MARKERS = [
-  { id: 'u1', position: [-22.56, 17.08] as [number, number], label: 'Unit 1 – Andreas N.', type: 'unit' as const, status: 'Active' },
-  { id: 'u2', position: [-22.95, 14.51] as [number, number], label: 'Unit 2 – Maria K.', type: 'unit' as const, status: 'Active' },
-  { id: 'a1', position: [-22.57, 17.09] as [number, number], label: 'ATM Windhoek Central', type: 'atm' as const, status: 'Online' },
-  { id: 'a2', position: [-22.68, 14.52] as [number, number], label: 'ATM Swakopmund', type: 'atm' as const, status: 'Online' },
-];
+export type MapMarker = {
+  id: string;
+  position: [number, number];
+  label: string;
+  type: 'unit' | 'atm';
+  status: string;
+};
 
 export interface MobileUnitsMapProps {
   height?: number;
   onViewList?: () => void;
+  markers?: MapMarker[];
 }
 
-export function MobileUnitsMap({ height = 500, onViewList }: MobileUnitsMapProps) {
+export function MobileUnitsMap({ height = 500, onViewList, markers = [] }: MobileUnitsMapProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -38,15 +40,21 @@ export function MobileUnitsMap({ height = 500, onViewList }: MobileUnitsMapProps
       </div>
       <div className="rounded-lg overflow-hidden border border-base-300" style={{ height }}>
         <Map center={DEFAULT_CENTER} zoom={7} height={height}>
-          {SAMPLE_MARKERS.map((m) => (
-            <AssetMarker
-              key={m.id}
-              position={m.position}
-              label={m.label}
-              type={m.type}
-              popup={<span>{m.label} – {m.status}</span>}
-            />
-          ))}
+          {markers.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-content-muted">No mobile units or ATMs to display. Data will be loaded from API.</p>
+            </div>
+          ) : (
+            markers.map((m) => (
+              <AssetMarker
+                key={m.id}
+                position={m.position}
+                label={m.label}
+                type={m.type}
+                popup={<span>{m.label} – {m.status}</span>}
+              />
+            ))
+          )}
         </Map>
       </div>
     </div>

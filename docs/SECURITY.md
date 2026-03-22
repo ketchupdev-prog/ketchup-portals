@@ -1,89 +1,50 @@
-# Security – Ketchup Portals
+# Ketchup Portals – Security & observability
 
-Guidance for securing the Ketchup Portals API and addressing common vulnerabilities.
+This document summarizes **security controls** and **monitoring** for the Ketchup Portals Next.js app (SmartPay admin/ops suite). For product scope including **SmartPay Copilot**, see [KETCHUP_PORTALS_PRD.md](../KETCHUP_PORTALS_PRD.md) §11 and §23.1.
 
----
+## Authentication & authorization
 
-## 1. Input validation
+- **Portal session:** `POST /api/v1/auth/login` sets the **`portal-auth`** HTTP-only cookie; protected APIs use `requirePermission` / RBAC. Optional **Neon Auth** under `/api/auth/*` and Supabase cookies may apply per environment—see [NEON_AUTH_SETUP.md](NEON_AUTH_SETUP.md).
+- **Principle of least privilege:** Route handlers enforce permissions aligned with the PRD permissions matrix (§20).
 
-- **API bodies:** Use Zod schemas in `src/lib/validate.ts`. Critical routes (auth/login, beneficiaries/[id]/sms, bulk-sms) validate with `validateBody(schema, body)` and return 400 with a clear message on failure.
-- **Path params:** Validate `[id]` params with `validateId(id)` (UUID format) before DB or business logic to avoid injection and bad data.
-- **Query params:** Pagination uses `parsePagination()` (page/limit clamped). Other query params should be validated (type, length, allowed values) where used.
+## Validation & errors
 
-**Do not:** Trust `request.json()` or `params.id` without validation. **Do:** Use `validateBody` / `validateId` and return 400 for invalid input.
+- **Input validation:** Zod (and related helpers) on API inputs; invalid requests return structured 400 responses.
+- **Errors:** Avoid leaking stack traces or secrets to clients; log server-side with context (route, request id where available).
 
----
+## Rate limiting
 
-## 2. SQL / NoSQL injection
+- Auth and sensitive mutations use rate limiting (see `src/lib/rate-limit.ts` and route handlers). For multi-instance production, prefer a shared store (Redis/KV) over in-memory limits.
 
-- **Database:** All queries use **parameterized inputs** via Drizzle (template literals with bound values). Do not build SQL with string concatenation or user input.
-- **Neon:** `@neondatabase/serverless` with `sql` template literals keeps queries parameterized.
+## Logging & audit
 
----
+- **Application logs:** Structured logging to stdout; aggregate in production (e.g. Logtail, Datadog).
+- **Audit trail:** Critical operations write to **`audit_logs`** (immutable retention per PRD).
+- **PII:** Do not log full national IDs, passwords, or session tokens.
 
-## 3. Authentication and authorization
+## CORS & headers
 
-- **Current state:** Auth is optional. When `NEXT_PUBLIC_REQUIRE_AUTH=true`, middleware redirects unauthenticated users from portal routes to `/login`. Supabase Auth and RBAC are not yet wired.
-- **API routes:** Most `/api/v1/*` routes do not enforce auth. Sensitive operations (e.g. issue voucher, adjust float, cron) should be protected when auth is implemented (e.g. JWT + role checks).
-- **Cron:** `POST /api/v1/sms/process` is protected by `CRON_SECRET` (or `SMS_CRON_SECRET`): request must send `Authorization: Bearer <secret>` when the env var is set.
-- **Session cookie (portal-auth):** Set by login route with `portalAuthCookieValue()`: HttpOnly, Secure (in production), SameSite=Lax, Path=/, Max-Age=expires_in. See PRD §7.5 and `docs/PROFILE_AND_SETTINGS.md` §2.1.
+- Configure allowed origins for browser clients per deployment; avoid `*` in production when credentials are used.
 
----
+## Error tracking & performance
 
-## 4. Rate limiting
+- **Sentry:** Enable when `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set (PRD §17).
+- **Web vitals / RUM:** Track LCP and related metrics for portal pages (Vercel Analytics or equivalent).
 
-- **Current state:** In-memory rate limiting is implemented for auth and SMS (Rule 16).
-  - **POST /api/v1/auth/login:** 10 requests per minute per IP.
-  - **POST /api/v1/auth/change-password:** 10 requests per minute **per authenticated user** (not per IP). Key: `change-password:user:<userId>`.
-  - **POST /api/v1/beneficiaries/bulk-sms:** 20 requests per minute per IP.
-  - **POST /api/v1/beneficiaries/[id]/sms:** 20 requests per minute per IP.
-  - Implementation: `src/lib/rate-limit.ts` (per-instance store; returns 429 with `Retry-After` when over limit).
-- **Production:** For distributed limits across Vercel serverless instances, use Redis or Vercel KV instead of in-memory store.
+## SmartPay Copilot (ecosystem)
 
----
+- **SmartPay Copilot** serves beneficiaries through the **shared SmartPay / Buffr backend and AI services**, not through Ketchup Portals v1 UI.
+- **Monitoring:** Treat Copilot like any critical dependency—health of the **API** (`api.ketchup.cc`), **AI proxy / inference service**, and trace tooling (e.g. Langfuse) owned by the backend team. Portal-specific Copilot dashboards are **out of scope for v1**; see PRD §23.1 for planned v2 considerations.
+- **Secrets:** AI provider keys and service URLs belong in the **backend** or AI service env; do not duplicate into portal env unless a future admin API requires it.
 
-## 5. CORS
+## Checklist (release)
 
-- **Current state:** Next.js API routes do not set CORS by default; same-origin only. If the front end and API share the same origin, no change is needed.
-- **Cross-origin:** If the API is called from another domain, set `Access-Control-Allow-Origin` (and related headers) explicitly; avoid `*` for authenticated or sensitive endpoints.
+- [ ] Required env vars validated (`DATABASE_URL`, etc.) per `src/lib/env.ts`
+- [ ] No secrets committed; `.env.local` gitignored
+- [ ] RBAC verified on new `/api/v1` routes
+- [ ] Rate limits on auth and high-risk mutations
+- [ ] Audit logging for new privileged actions
 
 ---
 
-## 6. Logging and PII
-
-- **Structured logging:** Use `src/lib/logger.ts` (logger.info/warn/error) with route and context. Do not log passwords, full tokens, or full PII (e.g. full ID numbers, full phone numbers). Log enough for debugging (e.g. route, error message, non-PII identifiers).
-- **5xx responses:** When returning 500, pass the route into `jsonError(..., 500, ROUTE)` so the logger can record the failing route.
-- **Audit logs:** When writing to `audit_logs.old_data` / `new_data`, redact PII (e.g. beneficiary name, phone, email) for entity types that contain it; store only entity_type, entity_id, and non-sensitive field names/values. See PRD Audit Finding 3.4.
-
-**ENCRYPTION_KEY (optional env):** Reserved for column-level encryption of sensitive PII via pgcrypto or application-layer encryption. If implemented: document which columns are encrypted and key rotation (PRD §12, §17).
-
----
-
-## 7. Dependencies and supply chain
-
-- Run `npm audit` and address critical/high issues where possible (e.g. `npm audit fix`; avoid `--force` without review).
-- Keep dependencies up to date; review release notes for security fixes.
-
----
-
-## 8. Checklist (before production)
-
-| Item | Status |
-|------|--------|
-| No secrets in repo (use `.env` / `.env.local` / `backend/.env`; never commit; use `.env.example` for variable names only) | Enforced via `.gitignore` |
-| Input validation (body + path params) on sensitive routes | Partial (login, SMS; extend to others) |
-| Parameterized DB queries | Done (Drizzle) |
-| Auth and RBAC on sensitive APIs | Not implemented |
-| Cron/worker endpoints protected by secret | Done (SMS process) |
-| Rate limiting | Done (auth + SMS; in-memory; use Redis/KV for production) |
-| CORS configured if cross-origin | Same-origin default |
-| No PII in logs | Structured logger; avoid logging secrets/PII |
-| HTTPS only | Enforced by Vercel in production |
-
----
-
-## 9. References
-
-- PRD §12 (Compliance & Security): `KETCHUP_PORTALS_PRD.md`
-- API design: `docs/DATABASE_AND_API_DESIGN.md`
-- SMS and cron: `docs/SMS_DESIGN.md`
+**Last updated:** 2026-03-21

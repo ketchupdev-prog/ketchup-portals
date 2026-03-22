@@ -16,7 +16,7 @@ Use a Neon connection string with `sslmode=require` and `channel_binding=require
 DATABASE_URL="postgresql://[user]:[password]@[neon_hostname]/[dbname]?sslmode=require&channel_binding=require"
 ```
 
-Set in `.env.local` (local) and in Vercel (or your host) environment variables.
+Set in `.env` or `.env.local` (local) and in Vercel (or your host) environment variables.
 
 ## Schema and migrations
 

@@ -1,17 +1,35 @@
 /**
- * GET /api/v1/field/tasks – List tasks (optional assigned_to filter). POST – Create task (field_lead).
+ * GET /api/v1/field/tasks – List field tasks (paginated, filterable).
+ * POST /api/v1/field/tasks – Create field task and assign to technician.
+ * Roles: field_lead, field_tech (RBAC enforced: field.tasks permission).
+ * Secured: RBAC, rate limiting, audit logging (POST only).
  */
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { tasks } from "@/db/schema";
 import { desc, eq, sql, and } from "drizzle-orm";
-import { parsePagination, paginationLinks, jsonPaginated, jsonError } from "@/lib/api-response";
+import { parsePagination, paginationLinks, jsonPaginated, jsonError, jsonSuccess } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { getPortalSession } from "@/lib/portal-auth";
+import { createAuditLogFromRequest } from "@/lib/services/audit-log-service";
+import { logger } from "@/lib/logger";
 
 const basePath = "/api/v1/field/tasks";
+const ROUTE_GET = "GET /api/v1/field/tasks";
+const ROUTE_POST = "POST /api/v1/field/tasks";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require field.tasks permission (SEC-001)
+    const auth = await requirePermission(request, "field.tasks", ROUTE_GET);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const assignedTo = searchParams.get("assigned_to");
@@ -44,17 +62,25 @@ export async function GET(request: NextRequest) {
     }));
     return jsonPaginated(data, meta, links);
   } catch (err) {
-    console.error("GET /api/v1/field/tasks error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE_GET, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE_GET);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // RBAC: Require field.tasks permission (SEC-001)
+    const auth = await requirePermission(request, "field.tasks", ROUTE_POST);
+    if (auth) return auth;
+
+    // Rate limiting: Admin mutations (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.ADMIN);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const body = await request.json().catch(() => ({}));
     const title = body.title;
     if (!title || typeof title !== "string" || !title.trim()) {
-      return jsonError("title is required", "ValidationError", { field: "title" }, 400);
+      return jsonError("title is required", "ValidationError", { field: "title" }, 400, ROUTE_POST);
     }
     const [inserted] = await db
       .insert(tasks)
@@ -68,8 +94,9 @@ export async function POST(request: NextRequest) {
         createdBy: body.created_by ?? null,
       })
       .returning({ id: tasks.id, title: tasks.title, status: tasks.status, assignedTo: tasks.assignedTo });
-    if (!inserted) return jsonError("Failed to create task", "InternalError", undefined, 500);
+    if (!inserted) return jsonError("Failed to create task", "InternalError", undefined, 500, ROUTE_POST);
 
+    // Send notifications if task is assigned
     if (inserted.assignedTo) {
       const { queueSmsToPhone } = await import("@/lib/services/sms-queue");
       const { createInAppNotification } = await import("@/lib/services/notifications");
@@ -104,9 +131,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return Response.json({ id: inserted.id, title: inserted.title, status: inserted.status }, { status: 201 });
+    // Audit logging: Task assignment (SEC-002)
+    const session = getPortalSession(request);
+    if (session && inserted.assignedTo) {
+      await createAuditLogFromRequest(request, session, {
+        action: 'field.task_assign',
+        resourceType: 'field_task',
+        resourceId: inserted.id,
+        metadata: {
+          title: inserted.title,
+          assignedTo: inserted.assignedTo,
+          status: inserted.status,
+          assetId: body.asset_id ?? null,
+        },
+      });
+    }
+
+    return jsonSuccess({ id: inserted.id, title: inserted.title, status: inserted.status }, { status: 201 });
   } catch (err) {
-    console.error("POST /api/v1/field/tasks error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE_POST, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE_POST);
   }
 }

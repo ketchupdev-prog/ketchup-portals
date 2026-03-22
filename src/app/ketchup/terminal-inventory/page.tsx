@@ -5,7 +5,7 @@
  * List of all POS terminals (FP09); status, assigned agent, last ping; assign terminal to agent.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { SearchHeader } from '@/components/ui/search-header';
 import { DataTable } from '@/components/ui/data-table';
@@ -13,13 +13,16 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { useToast } from '@/components/ui/toast';
+import { portalFetch } from '@/lib/portal-fetch';
 
-const SAMPLE_TERMINALS = [
-  { id: 't1', model: 'FP09', status: 'active', assignedAgent: 'Windhoek Mini Market', lastPing: '2025-02-22 14:30', softwareVersion: '2.1.0' },
-  { id: 't2', model: 'FP09', status: 'active', assignedAgent: 'Swakop Spar', lastPing: '2025-02-22 14:28', softwareVersion: '2.1.0' },
-  { id: 't3', model: 'FP09', status: 'offline', assignedAgent: '—', lastPing: '2025-02-20 10:00', softwareVersion: '2.0.9' },
-  { id: 't4', model: 'FP09', status: 'maintenance', assignedAgent: '—', lastPing: '2025-02-21 09:00', softwareVersion: '2.1.0' },
-];
+type Terminal = {
+  id: string;
+  model: string;
+  status: string;
+  assignedAgent: string;
+  lastPing: string;
+  softwareVersion: string;
+};
 
 const COLS = [
   { key: 'id', header: 'Terminal ID' },
@@ -50,11 +53,37 @@ export default function TerminalInventoryPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    portalFetch('/api/v1/terminals')
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json.data && Array.isArray(json.data)) {
+          setTerminals(json.data);
+        } else {
+          setTerminals([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTerminals([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredData = useMemo(() => {
-    if (!statusFilter) return SAMPLE_TERMINALS;
-    return SAMPLE_TERMINALS.filter((t) => t.status === statusFilter);
-  }, [statusFilter]);
+    if (!statusFilter) return terminals;
+    return terminals.filter((t) => t.status === statusFilter);
+  }, [statusFilter, terminals]);
 
   const handleAssign = (terminalId: string) => {
     setSelectedTerminalId(terminalId);
@@ -93,7 +122,7 @@ export default function TerminalInventoryPage() {
           {
             key: 'actions',
             header: 'Actions',
-            cell: (row: (typeof SAMPLE_TERMINALS)[0]) => (
+            cell: (row: Terminal) => (
               <Button variant="outline" size="xs" onClick={() => handleAssign(row.id)}>
                 Assign
               </Button>
@@ -102,7 +131,7 @@ export default function TerminalInventoryPage() {
         ]}
         data={filteredData}
         keyExtractor={(r) => r.id}
-        emptyMessage="No terminals."
+        emptyMessage={loading ? 'Loading terminals...' : 'No terminals found.'}
       />
       <Modal
         open={assignModalOpen}

@@ -123,10 +123,15 @@ export const portalUsers = pgTable("portal_users", {
   role: text("role").notNull(), // legacy: ketchup_ops | ketchup_compliance | ... | agent | field_tech | field_lead
   roleId: uuid("role_id").references((): any => roles.id), // optional FK; when set, permissions from roles/permissions
   agentId: uuid("agent_id").references(() => agents.id),
+  supabaseUserId: uuid("supabase_user_id").unique(), // Link to Supabase Auth user (shared with Buffr Connect)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLogin: timestamp("last_login", { withTimezone: true }),
-  twoFactorEnabled: boolean("two_factor_enabled").default(false),
-  twoFactorSecret: text("two_factor_secret"),
+  // 2FA/TOTP fields (SEC-005)
+  totpEnabled: boolean("totp_enabled").default(false),
+  totpSecret: text("totp_secret"), // Base32-encoded secret (encrypted at rest)
+  totpVerifiedAt: timestamp("totp_verified_at", { withTimezone: true }), // When 2FA was successfully enabled
+  backupCodes: text("backup_codes").array(), // Array of bcrypt-hashed backup codes
+  backupCodesGeneratedAt: timestamp("backup_codes_generated_at", { withTimezone: true }),
   phone: text("phone"),
 });
 
@@ -389,6 +394,19 @@ export const portalUserPreferences = pgTable(
   },
   (t) => [unique().on(t.portalUserId, t.preferenceKey)]
 );
+
+// Password reset tokens (AUTH-001) – Tokens for password reset flow.
+// Tokens expire in 24 hours and can only be used once (used_at is set after use).
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => portalUsers.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ─── Offline Redemption Integrity & Advance Recovery (PRD §3.3.11) ───────────
 

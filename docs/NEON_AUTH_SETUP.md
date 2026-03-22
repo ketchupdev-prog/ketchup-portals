@@ -2,6 +2,29 @@
 
 This app is wired for **Neon Auth** (Better Auth on your Neon database). Auth data lives in the `neon_auth` schema in the same Neon project as your app data.
 
+**URL reminder:** Neon Auth is served from **`/api/auth/*`** (`src/app/api/auth/[...path]/route.ts`). **Portal operator login** for `portal_users` remains **`POST /api/v1/auth/login`** (`/api/v1/...` is not rewritten onto `/api/auth/...` for those routes because handlers live under `src/app/api/v1/`).
+
+**Production domains:** When the portal is deployed at **portal.ketchup.cc** (or per-portal subdomains **admin.ketchup.cc**, **gov.ketchup.cc**, **agent.ketchup.cc**, **mobile.ketchup.cc**), add these as **trusted domains** in the Neon Console so OAuth and email verification redirects work. The Neon MCP does **not** expose a tool for this; it is configured in the Console only. See [Configure trusted domains for redirects](#configure-trusted-domains-for-redirects) below.
+
+## Configure trusted domains for redirects
+
+Neon Auth requires production domains to be listed as **trusted domains** so sign-in and password-reset redirects work. Configure this in the Neon Console (no API/MCP tool available).
+
+1. Open **[Neon Console](https://console.neon.tech)** and select your project (the one whose `DATABASE_URL` you use).
+2. Go to **Settings** → **Auth** (or **Auth** in the sidebar, then **Settings** if present).
+3. Find **Trusted domains** (or **Allowed redirect URLs** / **Authorized origins**).
+4. Add:
+   - **`https://portal.ketchup.cc`** – main portals app
+   - **`https://admin.ketchup.cc`** – Ketchup portal alias
+   - **`https://gov.ketchup.cc`** – Government portal alias
+   - **`https://agent.ketchup.cc`** – Agent portal alias
+   - **`https://mobile.ketchup.cc`** – Field Ops portal alias (if assigned to this app)
+5. For local development, ensure **Allow localhost** is enabled; disable it for production (see [Neon Auth production checklist](https://neon.com/docs/auth/production-checklist)).
+
+After saving, Neon Auth will accept redirects and callbacks from these origins. See [DOMAIN_AND_ENV_RECOMMENDATIONS.md](./DOMAIN_AND_ENV_RECOMMENDATIONS.md) and [DNS_AND_REDIRECTS.md](./DNS_AND_REDIRECTS.md).
+
+---
+
 ## 1. Get credentials from Neon
 
 ### Option A: Neon Console (recommended)
@@ -25,6 +48,8 @@ If you use the **Neon MCP** in Cursor and prefer **Stack Auth** instead of Bette
 
 ## 2. Configure environment variables
 
+Set in `.env` or `.env.local` (and in Vercel env for production). See [DOMAIN_AND_ENV_RECOMMENDATIONS.md](./DOMAIN_AND_ENV_RECOMMENDATIONS.md) for production values.
+
 In `.env.local` (or Vercel env vars) set:
 
 ```bash
@@ -35,6 +60,7 @@ NEXT_PUBLIC_NEON_AUTH_URL=https://ep-xxx.neon.tech/neondb/auth
 
 - Use the **exact** Auth URL from the Neon Console. Both URL variables are used (server and client).
 - `NEON_AUTH_COOKIE_SECRET`: generate with `openssl rand -base64 32`; required for the Next.js auth handler (cookie signing).
+- **Production:** When deployed at **portal.ketchup.cc**, set these in Vercel (or your host) and ensure Neon Auth allows callbacks from **portal.ketchup.cc**, **admin.ketchup.cc**, **gov.ketchup.cc**, **agent.ketchup.cc**, and **mobile.ketchup.cc** if used.
 
 ## 3. What’s already in the repo
 

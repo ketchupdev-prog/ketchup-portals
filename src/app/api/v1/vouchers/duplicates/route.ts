@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/vouchers/duplicates – List duplicate redemption events (PRD §3.3.11).
- * Roles: ketchup_ops, ketchup_compliance, ketchup_finance.
+ * Roles: ketchup_ops, ketchup_compliance, ketchup_finance (RBAC enforced: duplicate_redemptions.list permission).
  * Filters: status, from (ISO date), to (ISO date), page, limit.
  */
 
@@ -14,12 +14,22 @@ import {
 } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
 import { isValidRegion, normalizeRegion } from "@/lib/regions";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 const ROUTE = "GET /api/v1/vouchers/duplicates";
 const basePath = "/api/v1/vouchers/duplicates";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require duplicate_redemptions.list permission (SEC-001)
+    const auth = await requirePermission(request, "duplicate_redemptions.list", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
 

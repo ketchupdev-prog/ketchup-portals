@@ -1,5 +1,7 @@
 /**
- * GET /api/v1/terminals – List POS terminals. POST – Add terminal.
+ * GET /api/v1/terminals – List POS terminals (paginated, filterable).
+ * Roles: ketchup_ops (RBAC enforced: terminals.list permission).
+ * Secured: RBAC, rate limit.
  */
 
 import { NextRequest } from "next/server";
@@ -12,11 +14,23 @@ import {
   jsonPaginated,
   jsonError,
 } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
 const basePath = "/api/v1/terminals";
+const ROUTE_GET = "GET /api/v1/terminals";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require terminals.list permission (SEC-001)
+    const auth = await requirePermission(request, "terminals.list", ROUTE_GET);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");
@@ -50,34 +64,7 @@ export async function GET(request: NextRequest) {
     }));
     return jsonPaginated(data, meta, links);
   } catch (err) {
-    console.error("GET /api/v1/terminals error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json().catch(() => ({}));
-    const deviceId = body.device_id ?? body.deviceId;
-    if (!deviceId || typeof deviceId !== "string" || !deviceId.trim()) {
-      return jsonError("device_id is required", "ValidationError", { field: "device_id" }, 400);
-    }
-    const [inserted] = await db
-      .insert(posTerminals)
-      .values({
-        deviceId: deviceId.trim(),
-        model: body.model ?? null,
-        status: body.status ?? "active",
-        softwareVersion: body.software_version ?? null,
-      })
-      .returning({ id: posTerminals.id, device_id: posTerminals.deviceId, status: posTerminals.status });
-    if (!inserted) return jsonError("Failed to create terminal", "InternalError", undefined, 500);
-    return Response.json(
-      { id: inserted.id, device_id: inserted.device_id, status: inserted.status },
-      { status: 201 }
-    );
-  } catch (err) {
-    console.error("POST /api/v1/terminals error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE_GET, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE_GET);
   }
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export type AlertVariant = 'success' | 'error' | 'warning' | 'info';
@@ -27,4 +28,9 @@ export function Alert({ variant = 'info', title, children, className = '' }: Ale
       </div>
     </div>
   );
+}
+
+/** shadcn-compatible secondary line inside alerts */
+export function AlertDescription({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={cn('text-sm opacity-90', className)}>{children}</div>;
 }

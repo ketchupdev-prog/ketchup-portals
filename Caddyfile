@@ -1,0 +1,13 @@
+# Ketchup Portals – Caddy reverse proxy for Docker deploy with domains
+# Use with: docker compose up -d (app + caddy). Point portal, admin, gov, agent, mobile to this host.
+# Caddy gets Let's Encrypt certs automatically when DNS points here.
+# localhost + 127.0.0.1: proxy to app so CSS/static load when testing via http://localhost or port 80.
+
+portal.ketchup.cc, admin.ketchup.cc, gov.ketchup.cc, agent.ketchup.cc, mobile.ketchup.cc, localhost, 127.0.0.1 {
+    reverse_proxy app:3000
+}
+
+# Optional: access app directly on port 3000 (no Caddy) – static files and CSS work there too.
+# localhost {
+#     reverse_proxy app:3000
+# }

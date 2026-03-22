@@ -46,6 +46,16 @@ export const schemas = {
     current_password: z.string().min(1, "Current password is required"),
     new_password: z.string().min(8, "New password must be at least 8 characters"),
   }),
+  requestReset: z.object({
+    email: z.string().min(1, "Email is required").email("Invalid email").transform((s) => s.trim().toLowerCase()),
+  }),
+  confirmReset: z.object({
+    token: z.string().min(1, "Token is required"),
+    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  }),
+  validateToken: z.object({
+    token: z.string().min(1, "Token is required"),
+  }),
 };
 
 export type ValidationResult<T> =

@@ -1,7 +1,7 @@
 /**
  * POST /api/v1/auth/login – Login with email/password against portal_users.
- * Response: { access_token, token_type, expires_in } or 401.
- * Rate limited per IP (docs/SECURITY.md §4).
+ * Response: { data: { access_token, token_type, expires_in } } or errors. Rate limited per IP (docs/SECURITY.md §4).
+ * Open Banking–aligned: 429 with { errors } and Retry-After.
  */
 
 import { NextRequest } from "next/server";
@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { portalUsers } from "@/db/schema";
-import { jsonError } from "@/lib/api-response";
+import { jsonSuccess, jsonErrors } from "@/lib/api-response";
 import { validateBody, schemas } from "@/lib/validate";
 import { logger } from "@/lib/logger";
 import { checkRateLimit, getClientKey } from "@/lib/rate-limit";
@@ -26,27 +26,45 @@ export async function POST(request: NextRequest) {
     const { allowed, resetAt } = checkRateLimit(`login:${key}`, LOGIN_RATE_LIMIT);
     if (!allowed) {
       const retryAfter = Math.ceil((resetAt - Date.now()) / 1000);
-      return Response.json(
-        { error: "Too many login attempts", code: "RateLimitExceeded" },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(retryAfter),
-            "X-RateLimit-Remaining": "0",
+      return jsonErrors(
+        [
+          {
+            code: "RateLimitExceeded",
+            title: "Too Many Requests",
+            message: "Too many login attempts. Retry after the time indicated in Retry-After header.",
           },
-        }
+        ],
+        429,
+        { retryAfter }
       );
     }
 
     const body = await request.json().catch(() => ({}));
     const validation = validateBody(schemas.login, body);
     if (!validation.success) {
-      return jsonError(validation.error, "ValidationError", validation.details, 400);
+      return Response.json(
+        {
+          errors: [
+            {
+              code: "ValidationError",
+              message: validation.error,
+              field: validation.details?.field,
+            },
+          ],
+        },
+        { status: 400 }
+      );
     }
     const { email, password } = validation.data;
 
     const [user] = await db
-      .select({ id: portalUsers.id, email: portalUsers.email, role: portalUsers.role, passwordHash: portalUsers.passwordHash })
+      .select({ 
+        id: portalUsers.id, 
+        email: portalUsers.email, 
+        role: portalUsers.role, 
+        passwordHash: portalUsers.passwordHash,
+        totpEnabled: portalUsers.totpEnabled,
+      })
       .from(portalUsers)
       .where(eq(portalUsers.email, email.toLowerCase().trim()))
       .limit(1);
@@ -55,10 +73,13 @@ export async function POST(request: NextRequest) {
       await logLoginAttempt({
         success: false,
         identifier: email,
-        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
-        userAgent: request.headers.get("user-agent") ?? null,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+        userAgent: request.headers.get("user-agent") ?? undefined,
       });
-      return jsonError("Invalid email or password", "Unauthorized", undefined, 401, ROUTE);
+      return Response.json(
+        { errors: [{ code: "Unauthorized", message: "Invalid email or password" }] },
+        { status: 401 }
+      );
     }
 
     const match = await bcrypt.compare(password, user.passwordHash);
@@ -66,12 +87,37 @@ export async function POST(request: NextRequest) {
       await logLoginAttempt({
         success: false,
         identifier: email,
-        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
-        userAgent: request.headers.get("user-agent") ?? null,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+        userAgent: request.headers.get("user-agent") ?? undefined,
       });
-      return jsonError("Invalid email or password", "Unauthorized", undefined, 401, ROUTE);
+      return Response.json(
+        { errors: [{ code: "Unauthorized", message: "Invalid email or password" }] },
+        { status: 401 }
+      );
     }
 
+    // Check if user has 2FA enabled
+    if (user.totpEnabled) {
+      // Password correct, but 2FA required - don't create session yet
+      await logLoginAttempt({
+        success: false, // Not fully logged in yet (needs 2FA)
+        userId: user.id,
+        ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+        userAgent: request.headers.get("user-agent") ?? undefined,
+      });
+
+      // Return 2FA challenge response
+      return Response.json(
+        {
+          requires2FA: true,
+          userId: user.id,
+          message: "2FA verification required. Please provide your 6-digit code.",
+        },
+        { status: 200 }
+      );
+    }
+
+    // No 2FA required - proceed with normal login
     await db
       .update(portalUsers)
       .set({ lastLogin: new Date() })
@@ -80,8 +126,8 @@ export async function POST(request: NextRequest) {
     await logLoginAttempt({
       success: true,
       userId: user.id,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? null,
-      userAgent: request.headers.get("user-agent") ?? null,
+      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined,
+      userAgent: request.headers.get("user-agent") ?? undefined,
     });
 
     const exp = Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SEC;
@@ -99,6 +145,9 @@ export async function POST(request: NextRequest) {
     logger.error(ROUTE, err instanceof Error ? err.message : "Internal server error", {
       name: err instanceof Error ? err.name : undefined,
     });
-    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
+    return Response.json(
+      { errors: [{ code: "InternalError", message: "Internal server error" }] },
+      { status: 500 }
+    );
   }
 }

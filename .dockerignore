@@ -1,0 +1,55 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs (rebuilt inside image)
+.next
+out
+build
+
+# Env and secrets (inject at runtime)
+.env*
+!.env.example
+
+# Git and IDE
+.git
+.gitignore
+.github
+.cursor
+.vscode
+*.md
+!README.md
+
+# Tests and tooling (not needed in image)
+coverage
+playwright-report
+test-results
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+**/__tests__
+**/*.test.*
+**/*.spec.*
+playwright.config.ts
+vitest.config.ts
+
+# Misc
+.DS_Store
+*.pem
+*.log
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# Docs and scripts (optional: remove if you need seed in image)
+docs
+scripts
+drizzle
+*.mjs

@@ -6,6 +6,11 @@
  */
 
 import nodemailer from "nodemailer";
+import { getServerEnv } from "@/lib/env";
+import { buildPortalUrl } from "@/lib/portal-url";
+import { getPortalForgotPasswordPath } from "@/lib/portal-auth-config";
+import { CONTACT_EMAIL } from "@/lib/contact";
+import type { PortalSlug } from "@/lib/portal-auth-config";
 
 export interface SendEmailOptions {
   to: string;
@@ -25,7 +30,7 @@ function getTransport(): nodemailer.Transporter | null {
   const port = process.env.SMTP_PORT;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@ketchup.cc";
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? CONTACT_EMAIL;
 
   if (!host || !user || !pass) return null;
 
@@ -47,7 +52,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     return { sent: false, error: "SMTP not configured (SMTP_HOST, SMTP_USER, SMTP_PASS)" };
   }
 
-  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@ketchup.cc";
+  const from = process.env.SMTP_FROM ?? process.env.SMTP_USER ?? CONTACT_EMAIL;
 
   try {
     const info = await transport.sendMail({
@@ -63,4 +68,30 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     console.error("Email send error:", message);
     return { sent: false, error: message };
   }
+}
+
+/**
+ * Build the password reset link for a portal (uses NEXT_PUBLIC_PORTAL_URL or BASE_URL).
+ * Call from server only (e.g. forgot-password route when sending reset email).
+ */
+export function buildPasswordResetLink(portal: PortalSlug, token: string): string {
+  const path = `${getPortalForgotPasswordPath(portal)}?token=${encodeURIComponent(token)}`;
+  return buildPortalUrl(path, getServerEnv());
+}
+
+/**
+ * Send password reset email. Uses buildPasswordResetLink for the portal URL.
+ * Returns sendEmail result. Call from server only.
+ */
+export async function sendPasswordResetEmail(
+  to: string,
+  portal: PortalSlug,
+  token: string,
+  options?: { subject?: string }
+): Promise<SendEmailResult> {
+  const link = buildPasswordResetLink(portal, token);
+  const subject = options?.subject ?? "Reset your password – Ketchup Portals";
+  const text = `Use this link to reset your password: ${link}\n\nIf you didn't request this, ignore this email.`;
+  const html = `<!DOCTYPE html><html><body><p>Use this link to reset your password:</p><p><a href="${link}">${link}</a></p><p>If you didn't request this, ignore this email.</p></body></html>`;
+  return sendEmail({ to, subject, text, html });
 }

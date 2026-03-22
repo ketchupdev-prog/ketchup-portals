@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import {
   duplicateRedemptionEvents,
   beneficiaryAdvances,
+  advanceRecoveryTransactions,
   users,
   agents,
   vouchers,
@@ -386,4 +387,226 @@ export function simulateNextVoucher(
     net_disbursed: netDisbursed,
     remaining_advance: Math.max(0, remainingAdvance),
   };
+}
+
+/**
+ * Calculate outstanding advance for a beneficiary
+ * Returns total amount owed and array of cycle IDs where advances exist
+ * 
+ * @param beneficiaryId - UUID of the beneficiary
+ * @returns { amount: total outstanding amount, cycleIds: array of cycle IDs }
+ */
+export async function getOutstandingAdvance(
+  beneficiaryId: string
+): Promise<{ amount: number; cycleIds: string[] }> {
+  const advances = await db
+    .select({
+      id: beneficiaryAdvances.id,
+      originalAmount: beneficiaryAdvances.originalAmount,
+      recoveredAmount: beneficiaryAdvances.recoveredAmount,
+    })
+    .from(beneficiaryAdvances)
+    .where(
+      and(
+        eq(beneficiaryAdvances.beneficiaryId, beneficiaryId),
+        eq(beneficiaryAdvances.status, "outstanding")
+      )
+    );
+
+  let totalOutstanding = 0;
+  const cycleIds: string[] = [];
+
+  for (const advance of advances) {
+    const outstanding =
+      Number(advance.originalAmount) - Number(advance.recoveredAmount ?? 0);
+    if (outstanding > 0) {
+      totalOutstanding += outstanding;
+      cycleIds.push(advance.id);
+    }
+  }
+
+  return {
+    amount: Math.max(0, totalOutstanding),
+    cycleIds,
+  };
+}
+
+/**
+ * Execute manual advance recovery for a beneficiary
+ * Creates recovery transaction and updates advance balance
+ * 
+ * @param params.beneficiaryId - UUID of beneficiary
+ * @param params.cycleId - Optional cycle ID (current date used if not provided)
+ * @param params.recoveryAmount - Amount to recover (full outstanding if not provided)
+ * @param params.userId - UUID of operator who triggered recovery
+ * @returns Recovery result with transaction details
+ */
+export async function executeManualRecovery(params: {
+  beneficiaryId: string;
+  cycleId?: string;
+  recoveryAmount?: number;
+  userId: string;
+}): Promise<{
+  success: boolean;
+  recoveredAmount: number;
+  remainingBalance: number;
+  transactionId: string;
+  message?: string;
+}> {
+  const { beneficiaryId, cycleId, recoveryAmount, userId } = params;
+
+  // Get outstanding advances
+  const outstandingData = await getOutstandingAdvance(beneficiaryId);
+
+  if (outstandingData.amount <= 0) {
+    return {
+      success: false,
+      recoveredAmount: 0,
+      remainingBalance: 0,
+      transactionId: "",
+      message: "No outstanding advance to recover",
+    };
+  }
+
+  // Determine recovery amount
+  const amountToRecover = recoveryAmount ?? outstandingData.amount;
+
+  // Validate recovery amount
+  if (amountToRecover > outstandingData.amount) {
+    return {
+      success: false,
+      recoveredAmount: 0,
+      remainingBalance: outstandingData.amount,
+      transactionId: "",
+      message: "Recovery amount exceeds outstanding advance",
+    };
+  }
+
+  if (amountToRecover <= 0) {
+    return {
+      success: false,
+      recoveredAmount: 0,
+      remainingBalance: outstandingData.amount,
+      transactionId: "",
+      message: "Recovery amount must be greater than zero",
+    };
+  }
+
+  // Get advances to recover from (oldest first)
+  const advances = await db
+    .select()
+    .from(beneficiaryAdvances)
+    .where(
+      and(
+        eq(beneficiaryAdvances.beneficiaryId, beneficiaryId),
+        eq(beneficiaryAdvances.status, "outstanding")
+      )
+    )
+    .orderBy(beneficiaryAdvances.createdAt);
+
+  let remainingToRecover = amountToRecover;
+  const recoveryTransactions: string[] = [];
+
+  // Recover from each advance (oldest first)
+  for (const advance of advances) {
+    if (remainingToRecover <= 0) break;
+
+    const outstanding =
+      Number(advance.originalAmount) - Number(advance.recoveredAmount ?? 0);
+
+    if (outstanding <= 0) continue;
+
+    const amountFromThisAdvance = Math.min(outstanding, remainingToRecover);
+
+    // Create recovery transaction
+    const [transaction] = await db
+      .insert(advanceRecoveryTransactions)
+      .values({
+        advanceId: advance.id,
+        voucherId: null,
+        cycleDate: (cycleId ? new Date(cycleId) : new Date()).toISOString().slice(0, 10),
+        amountDeducted: String(amountFromThisAdvance),
+        entitlement: "0",
+        netDisbursed: String(-amountFromThisAdvance),
+      })
+      .returning();
+
+    recoveryTransactions.push(transaction.id);
+
+    // Update advance recovered amount
+    const newRecoveredAmount =
+      Number(advance.recoveredAmount ?? 0) + amountFromThisAdvance;
+
+    await db
+      .update(beneficiaryAdvances)
+      .set({
+        recoveredAmount: String(newRecoveredAmount),
+        lastRecoveryAt: new Date(),
+        status:
+          newRecoveredAmount >= Number(advance.originalAmount)
+            ? "fully_recovered"
+            : "outstanding",
+      })
+      .where(eq(beneficiaryAdvances.id, advance.id));
+
+    remainingToRecover -= amountFromThisAdvance;
+  }
+
+  const newOutstanding = await getOutstandingAdvance(beneficiaryId);
+
+  return {
+    success: true,
+    recoveredAmount: amountToRecover,
+    remainingBalance: newOutstanding.amount,
+    transactionId: recoveryTransactions[0] ?? "",
+  };
+}
+
+/**
+ * Get recovery transaction history for a beneficiary
+ * Returns all recovery transactions ordered by most recent first
+ * 
+ * @param beneficiaryId - UUID of beneficiary
+ * @param limit - Maximum number of transactions to return
+ * @returns Array of recovery transactions
+ */
+export async function getRecoveryHistory(
+  beneficiaryId: string,
+  limit: number = 50
+): Promise<
+  Array<{
+    id: string;
+    advance_id: string;
+    voucher_id: string | null;
+    cycle_date: string;
+    amount_deducted: string;
+    entitlement: string;
+    net_disbursed: string;
+    created_at: string;
+  }>
+> {
+  const rows = await db
+    .select({
+      t: advanceRecoveryTransactions,
+      a: beneficiaryAdvances,
+    })
+    .from(advanceRecoveryTransactions)
+    .innerJoin(
+      beneficiaryAdvances,
+      eq(advanceRecoveryTransactions.advanceId, beneficiaryAdvances.id)
+    )
+    .where(eq(beneficiaryAdvances.beneficiaryId, beneficiaryId))
+    .orderBy(desc(advanceRecoveryTransactions.createdAt))
+    .limit(limit);
+
+  return rows.map((r) => ({
+    id: r.t.id,
+    advance_id: r.t.advanceId,
+    voucher_id: r.t.voucherId,
+    cycle_date: String(r.t.cycleDate),
+    amount_deducted: String(r.t.amountDeducted),
+    entitlement: String(r.t.entitlement),
+    net_disbursed: String(r.t.netDisbursed),
+    created_at: r.t.createdAt.toISOString(),
+  }));
 }

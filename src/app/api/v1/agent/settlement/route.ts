@@ -1,5 +1,6 @@
 /**
  * GET /api/v1/agent/settlement – Daily settlement summary from transactions.
+ * Roles: agent (RBAC enforced: agent.dashboard permission).
  * Query: agent_id (required), date (optional, default today).
  */
 
@@ -8,12 +9,22 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions } from "@/db/schema";
 import { jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 import { logger } from "@/lib/logger";
 
 const ROUTE = "GET /api/v1/agent/settlement";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require agent.dashboard permission (SEC-001)
+    const auth = await requirePermission(request, "agent.dashboard", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const agentId = request.nextUrl.searchParams.get("agent_id");
     const dateParam = request.nextUrl.searchParams.get("date");
     const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)

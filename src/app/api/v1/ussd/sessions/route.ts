@@ -1,5 +1,7 @@
 /**
  * GET /api/v1/ussd/sessions – List USSD sessions.
+ * Roles: ketchup_ops (RBAC enforced: ussd.view permission).
+ * Security: RBAC, rate limiting.
  */
 
 import { NextRequest } from "next/server";
@@ -7,11 +9,23 @@ import { db } from "@/lib/db";
 import { ussdSessions, users } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { parsePagination, paginationLinks, jsonPaginated, jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
+const ROUTE = "GET /api/v1/ussd/sessions";
 const basePath = "/api/v1/ussd/sessions";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require ussd.view permission (SEC-001)
+    const auth = await requirePermission(request, "ussd.view", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const userId = searchParams.get("user_id");
@@ -51,7 +65,7 @@ export async function GET(request: NextRequest) {
     }));
     return jsonPaginated(data, meta, links);
   } catch (err) {
-    console.error("GET /api/v1/ussd/sessions error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

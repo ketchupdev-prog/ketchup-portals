@@ -7,6 +7,14 @@
 
 import { z } from "zod";
 
+function normalizeOptionalUrl(raw?: string): string {
+  const value = (raw ?? "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  // Support common local/test style values like localhost:3000.
+  return `http://${value}`;
+}
+
 /** Exported for unit tests (validate required/optional env without process.env). */
 export const serverEnvSchema = z.object({
   /** Required for DB (Neon). Set in .env.local or Vercel. */
@@ -24,8 +32,8 @@ export const serverEnvSchema = z.object({
   /** Optional: SMS gateway API (used by lib/services/sms.ts) */
   SMS_API_URL: z.string().url().optional().or(z.literal("")),
   SMS_API_KEY: z.string().optional(),
-  /** Optional: base URL for cron callbacks (e.g. local dev) */
-  BASE_URL: z.string().url().optional().or(z.literal("")),
+  /** Optional: base URL for cron callbacks (e.g. local dev). Kept permissive for test environments. */
+  BASE_URL: z.string().optional(),
   /** Optional: SMTP for transactional email (password reset, onboarding). PRD §7.4.1 */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.string().optional(),
@@ -39,8 +47,13 @@ export const serverEnvSchema = z.object({
   NEON_AUTH_COOKIE_SECRET: z.string().optional(),
   /** Optional: Neon Auth – client-side auth URL (same as NEON_AUTH_BASE_URL; NEXT_PUBLIC_ for client). */
   NEXT_PUBLIC_NEON_AUTH_URL: z.string().url().optional().or(z.literal("")),
+  /** Optional: public URL of portal app (emails, password reset links). Recommended: https://portal.ketchup.cc */
+  NEXT_PUBLIC_PORTAL_URL: z.string().url().optional().or(z.literal("")),
   /** Optional: Float amount (NAD) above which two approvals are required. Default 50000. PRD Audit §1.6. */
   DUAL_CONTROL_FLOAT_THRESHOLD_NAD: z.string().optional(),
+  /** Optional: SmartPay backend API for financial/compliance integration */
+  SMARTPAY_BACKEND_URL: z.string().url().optional().or(z.literal("")),
+  NEXT_PUBLIC_SMARTPAY_BACKEND_URL: z.string().url().optional().or(z.literal("")),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -63,7 +76,7 @@ export function getServerEnv(): ServerEnv {
     SMS_WEBHOOK_SECRET: process.env.SMS_WEBHOOK_SECRET,
     SMS_API_URL: process.env.SMS_API_URL,
     SMS_API_KEY: process.env.SMS_API_KEY,
-    BASE_URL: process.env.BASE_URL,
+    BASE_URL: normalizeOptionalUrl(process.env.BASE_URL),
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_PORT: process.env.SMTP_PORT,
     SMTP_USER: process.env.SMTP_USER,
@@ -73,7 +86,10 @@ export function getServerEnv(): ServerEnv {
     NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
     NEON_AUTH_COOKIE_SECRET: process.env.NEON_AUTH_COOKIE_SECRET,
     NEXT_PUBLIC_NEON_AUTH_URL: process.env.NEXT_PUBLIC_NEON_AUTH_URL,
+    NEXT_PUBLIC_PORTAL_URL: process.env.NEXT_PUBLIC_PORTAL_URL,
     DUAL_CONTROL_FLOAT_THRESHOLD_NAD: process.env.DUAL_CONTROL_FLOAT_THRESHOLD_NAD,
+    SMARTPAY_BACKEND_URL: process.env.SMARTPAY_BACKEND_URL,
+    NEXT_PUBLIC_SMARTPAY_BACKEND_URL: process.env.NEXT_PUBLIC_SMARTPAY_BACKEND_URL,
   });
   if (!parsed.success) {
     const first = parsed.error.issues[0];

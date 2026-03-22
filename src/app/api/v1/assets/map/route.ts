@@ -1,15 +1,28 @@
 /**
- * GET /api/v1/assets/map – GeoJSON for map (agents + assets).
+ * GET /api/v1/assets/map – GeoJSON for map visualization (agents + assets).
+ * Roles: field_tech, field_lead (RBAC enforced: assets.manage permission).
+ * Secured: RBAC, rate limit.
  */
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { assets, agents } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
-export async function GET(_request: NextRequest) {
+const ROUTE = "GET /api/v1/assets/map";
+
+export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require assets.manage permission (SEC-001)
+    const auth = await requirePermission(request, "assets.manage", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
     const [assetRows, agentRows] = await Promise.all([
       db.select({ id: assets.id, type: assets.type, name: assets.name, lat: assets.locationLat, lng: assets.locationLng, status: assets.status }).from(assets),
       db.select({ id: agents.id, name: agents.name, lat: agents.locationLat, lng: agents.locationLng, status: agents.status }).from(agents),
@@ -38,7 +51,7 @@ export async function GET(_request: NextRequest) {
     const geojson = { type: "FeatureCollection" as const, features };
     return Response.json(geojson);
   } catch (err) {
-    console.error("GET /api/v1/assets/map error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

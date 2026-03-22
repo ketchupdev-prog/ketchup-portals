@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "daisyui";
+@import "react-day-picker/style.css";
 
 /* ─── Theme & contrast (WCAG AA): ensure legible text on all backgrounds ─── */
 :root {
@@ -9,8 +10,12 @@
 
 /* Override DaisyUI light theme for stronger contrast (base-content darker; no faint table headers).
  * Use Ketchup brand primary (Forest #226644) instead of default purple so btn-primary, link-primary,
- * text-primary, ring-primary are consistent with logo and rest of app. */
+ * text-primary, ring-primary are consistent with logo and rest of app.
+ * Force light background/text so the page is always readable when data-theme="light" (ignore system dark mode). */
 [data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --color-base-100: #ffffff;
   --color-base-content: oklch(18% 0.008 285);
   --color-base-200: oklch(97% 0.006 285);
   --color-base-300: oklch(93% 0.008 285);
@@ -31,7 +36,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
@@ -59,8 +64,7 @@ body {
   color: var(--color-content-muted);
 }
 
-/* react-day-picker v9 */
-@import "react-day-picker/style.css";
+/* react-day-picker v9 – imported at top of file */
 
 /* react-big-calendar – scoped overrides for scheduler */
 .scheduler.rbc-override .rbc-calendar {

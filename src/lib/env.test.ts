@@ -44,12 +44,12 @@ describe("serverEnvSchema", () => {
   it("accepts optional BUFFR_API_URL and BUFFR_API_KEY", () => {
     const r = serverEnvSchema.safeParse({
       DATABASE_URL: "postgres://x",
-      BUFFR_API_URL: "https://pay.buffr.ai",
+      BUFFR_API_URL: "https://api.ketchup.cc",
       BUFFR_API_KEY: "some-key",
     });
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data.BUFFR_API_URL).toBe("https://pay.buffr.ai");
+      expect(r.data.BUFFR_API_URL).toBe("https://api.ketchup.cc");
       expect(r.data.BUFFR_API_KEY).toBe("some-key");
     }
   });

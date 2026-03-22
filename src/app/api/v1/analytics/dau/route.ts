@@ -1,6 +1,7 @@
 /**
  * GET /api/v1/analytics/dau – Daily active users from user_sessions (distinct user_id per day).
  * Query: days (optional, 1–30, default 7).
+ * Roles: ketchup_*, gov_* (RBAC enforced: dashboard.summary permission).
  */
 
 import { NextRequest } from "next/server";
@@ -9,11 +10,21 @@ import { db } from "@/lib/db";
 import { userSessions } from "@/db/schema";
 import { jsonError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 const ROUTE = "GET /api/v1/analytics/dau";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require dashboard.summary permission (SEC-001)
+    const auth = await requirePermission(request, "dashboard.summary", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const days = Math.min(30, Math.max(1, parseInt(searchParams.get("days") ?? "7", 10) || 7));
 

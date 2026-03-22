@@ -15,6 +15,7 @@ import { MetricCard } from '@/components/ui/metric-card';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { exportToCSV, buildCSVFilename } from '@/lib/export-csv';
 
 type VoucherRow = {
   id: string;
@@ -52,17 +53,6 @@ function mapApiToRow(r: {
   };
 }
 
-function exportCSV(rows: VoucherRow[], filename: string) {
-  const header = COLS.map((c) => c.header).join(',');
-  const body = rows.map((r) => COLS.map((c) => String((r as Record<string, unknown>)[c.key] ?? '')).join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function GovernmentVouchersPage() {
   const { addToast } = useToast();
@@ -145,7 +135,11 @@ export default function GovernmentVouchersPage() {
   const filtered = useMemo(() => data, [data]);
 
   const handleExport = () => {
-    exportCSV(filtered, `vouchers-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportToCSV(
+      filtered,
+      COLS.map((c) => ({ key: c.key as keyof VoucherRow, header: c.header })),
+      buildCSVFilename('vouchers')
+    );
     addToast('Exported.', 'success');
   };
 

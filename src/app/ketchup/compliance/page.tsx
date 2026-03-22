@@ -5,7 +5,7 @@
  * Audit logs link, incident reports, unverified beneficiaries; export for BoN.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SearchHeader } from '@/components/ui/search-header';
@@ -14,16 +14,25 @@ import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { REGION_SELECT_OPTIONS } from '@/lib/regions';
+import { exportToCSV } from '@/lib/export-csv';
+import { portalFetch } from '@/lib/portal-fetch';
 
-const SAMPLE_INCIDENTS = [
-  { id: 'i1', date: '2025-02-20', description: 'Suspicious redemption pattern', impact: 'Low', actionsTaken: 'Account reviewed', resolution: 'Resolved – beneficiary verified' },
-  { id: 'i2', date: '2025-02-18', description: 'Duplicate voucher attempt', impact: 'Medium', actionsTaken: 'Voucher blocked', resolution: 'Pending' },
-];
+type Incident = {
+  id: string;
+  date: string;
+  description: string;
+  impact: string;
+  actionsTaken: string;
+  resolution: string;
+};
 
-const SAMPLE_UNVERIFIED = [
-  { id: 'b1', name: 'John Doe', region: 'Khomas', daysOverdue: 95, phone: '+264 81 123 4567' },
-  { id: 'b2', name: 'Jane Smith', region: 'Erongo', daysOverdue: 120, phone: '+264 81 234 5678' },
-];
+type UnverifiedBeneficiary = {
+  id: string;
+  name: string;
+  region: string;
+  daysOverdue: number;
+  phone: string;
+};
 
 const INCIDENT_COLS = [
   { key: 'date', header: 'Date' },
@@ -40,26 +49,67 @@ const UNVERIFIED_COLS = [
   { key: 'phone', header: 'Phone' },
 ];
 
-function exportCSV(rows: Record<string, string | number>[], columns: { key: string; header: string }[], filename: string) {
-  const header = columns.map((c) => c.header).join(',');
-  const body = rows.map((r) => columns.map((c) => String(r[c.key] ?? '')).join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function CompliancePage() {
   const [activeTab, setActiveTab] = useState('incidents');
   const [regionFilter, setRegionFilter] = useState('');
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [unverifiedBeneficiaries, setUnverifiedBeneficiaries] = useState<UnverifiedBeneficiary[]>([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(true);
+  const [unverifiedLoading, setUnverifiedLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIncidentsLoading(true);
+    portalFetch('/api/v1/incidents')
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json.data && Array.isArray(json.data)) {
+          setIncidents(json.data);
+        } else {
+          setIncidents([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIncidents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIncidentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUnverifiedLoading(true);
+    portalFetch('/api/v1/beneficiaries/unverified')
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json.data && Array.isArray(json.data)) {
+          setUnverifiedBeneficiaries(json.data);
+        } else {
+          setUnverifiedBeneficiaries([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setUnverifiedBeneficiaries([]);
+      })
+      .finally(() => {
+        if (!cancelled) setUnverifiedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredUnverified = useMemo(() => {
-    if (!regionFilter) return SAMPLE_UNVERIFIED;
-    return SAMPLE_UNVERIFIED.filter((u) => u.region === regionFilter);
-  }, [regionFilter]);
+    if (!regionFilter) return unverifiedBeneficiaries;
+    return unverifiedBeneficiaries.filter((u) => u.region === regionFilter);
+  }, [regionFilter, unverifiedBeneficiaries]);
 
   const tabs = [
     {
@@ -72,9 +122,9 @@ export default function CompliancePage() {
           </p>
           <DataTable
             columns={INCIDENT_COLS}
-            data={SAMPLE_INCIDENTS}
+            data={incidents}
             keyExtractor={(r) => r.id}
-            emptyMessage="No incidents."
+            emptyMessage={incidentsLoading ? 'Loading incidents...' : 'No incidents reported.'}
           />
         </div>
       ),
@@ -91,7 +141,11 @@ export default function CompliancePage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => exportCSV(filteredUnverified, UNVERIFIED_COLS, 'unverified-beneficiaries.csv')}
+                onClick={() => exportToCSV(
+                  filteredUnverified as Record<string, unknown>[],
+                  UNVERIFIED_COLS.map((c) => ({ key: c.key as keyof Record<string, unknown>, header: c.header })),
+                  'unverified-beneficiaries.csv'
+                )}
               >
                 Export for field follow-up
               </Button>
@@ -108,7 +162,7 @@ export default function CompliancePage() {
             columns={UNVERIFIED_COLS}
             data={filteredUnverified}
             keyExtractor={(r) => r.id}
-            emptyMessage="No unverified beneficiaries (proof-of-life overdue >90 days)."
+            emptyMessage={unverifiedLoading ? 'Loading unverified beneficiaries...' : 'No unverified beneficiaries (proof-of-life overdue >90 days).'}
           />
         </div>
       ),

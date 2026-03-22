@@ -10,12 +10,14 @@
 import Link from 'next/link';
 import { Container } from '@/components/ui/container';
 import { LogoMark } from '@/components/ui/logo-mark';
+import { CONTACT_MAILTO } from '@/lib/contact';
 
 const FOOTER_LINKS = [
   { label: 'Ketchup Portal', href: '/ketchup/login' },
   { label: 'Government Portal', href: '/government/login' },
   { label: 'Agent Portal', href: '/agent/login' },
   { label: 'Field Ops', href: '/field-ops/login' },
+  { label: 'Contact', href: CONTACT_MAILTO, external: true },
 ];
 
 export function LandingFooter() {
@@ -29,14 +31,26 @@ export function LandingFooter() {
             <span className="font-semibold text-base-content">Ketchup SmartPay</span>
           </Link>
           <nav className="flex flex-wrap justify-center gap-6 sm:gap-8" aria-label="Footer navigation">
-            {FOOTER_LINKS.map(({ label, href }) => (
-              <Link
-                key={href}
-                href={href}
-                className="text-sm text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-              >
-                {label}
-              </Link>
+            {FOOTER_LINKS.map(({ label, href, external }) => (
+              <span key={href} className="inline">
+                {external ? (
+                  <a
+                    href={href}
+                    className="text-sm text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {label}
+                  </a>
+                ) : (
+                  <Link
+                    href={href}
+                    className="text-sm text-base-content/70 hover:text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                  >
+                    {label}
+                  </Link>
+                )}
+              </span>
             ))}
           </nav>
         </div>

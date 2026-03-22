@@ -12,22 +12,12 @@ import { portalFetch } from '@/lib/portal-fetch';
 import { BeneficiaryTable, type BeneficiaryRow } from '@/components/ketchup/beneficiary-table';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { exportToCSV, buildCSVFilename } from '@/lib/export-csv';
 
 const REGION_KEY = 'region';
 const WALLET_KEY = 'status';
 const VERIFICATION_KEY = 'verification';
 
-function exportBeneficiariesCSV(rows: BeneficiaryRow[], filename: string) {
-  const header = 'name,phone,region,lastProofOfLife,walletStatus';
-  const body = rows.map((r) => [r.name, r.phone, r.region, r.lastProofOfLife, r.walletStatus].join(',')).join('\n');
-  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 function mapApiToRow(r: { id: string; full_name: string; phone: string; region: string | null; wallet_status: string; proof_of_life_due_date: string | null }): BeneficiaryRow {
   return {
@@ -92,7 +82,17 @@ function BeneficiariesListContent() {
   const filteredData = useMemo(() => data, [data]);
 
   const handleExportCSV = () => {
-    exportBeneficiariesCSV(filteredData, `beneficiaries-${new Date().toISOString().slice(0, 10)}.csv`);
+    exportToCSV(
+      filteredData,
+      [
+        { key: 'name', header: 'name' },
+        { key: 'phone', header: 'phone' },
+        { key: 'region', header: 'region' },
+        { key: 'lastProofOfLife', header: 'lastProofOfLife' },
+        { key: 'walletStatus', header: 'walletStatus' },
+      ],
+      buildCSVFilename('beneficiaries')
+    );
     addToast('CSV exported.', 'success');
   };
 

@@ -6,6 +6,7 @@ import { KetchupSidebar } from '@/components/sidebars/ketchup-sidebar';
 import { GovernmentSidebar } from '@/components/sidebars/government-sidebar';
 import { AgentSidebar } from '@/components/sidebars/agent-sidebar';
 import { FieldOpsSidebar } from '@/components/sidebars/field-ops-sidebar';
+import { AdminSidebar } from '@/components/sidebars/admin-sidebar';
 import { Header } from '@/components/header';
 import { getPortalFromPath, getPortalLoginPath } from '@/lib/portal-auth-config';
 
@@ -46,6 +47,8 @@ export function PortalLayout({ children }: PortalLayoutProps) {
     <AgentSidebar />
   ) : pathname.startsWith('/field-ops') ? (
     <FieldOpsSidebar />
+  ) : pathname.startsWith('/admin') ? (
+    <AdminSidebar />
   ) : null;
 
   if (!authChecked) {

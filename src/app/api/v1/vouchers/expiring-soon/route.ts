@@ -1,5 +1,6 @@
 /**
  * GET /api/v1/vouchers/expiring-soon – Vouchers expiring in next 7 days (status=available).
+ * Roles: ketchup_*, gov_* (RBAC enforced: vouchers.list permission).
  */
 
 import { NextRequest } from "next/server";
@@ -7,9 +8,22 @@ import { db } from "@/lib/db";
 import { vouchers, users, programmes } from "@/db/schema";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { jsonError } from "@/lib/api-response";
+import { logger } from "@/lib/logger";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
-export async function GET(_request: NextRequest) {
+const ROUTE = "GET /api/v1/vouchers/expiring-soon";
+
+export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require vouchers.list permission (SEC-001)
+    const auth = await requirePermission(request, "vouchers.list", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const now = new Date();
     const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const rows = await db
@@ -46,7 +60,9 @@ export async function GET(_request: NextRequest) {
 
     return Response.json({ data });
   } catch (err) {
-    console.error("GET /api/v1/vouchers/expiring-soon error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "List expiring vouchers error", {
+      error: err,
+    });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

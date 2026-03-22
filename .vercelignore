@@ -1,0 +1,29 @@
+# Vercel Ignore - Exclude large files from deployment
+node_modules
+.next
+.git
+.env.local
+.env.test
+*.log
+coverage
+.turbo
+*.test.ts
+*.test.tsx
+__tests__
+.cache
+dist
+build
+
+# Documentation (too large)
+docs/**/*.pdf
+docs/**/*.docx
+*.md
+
+# Database files
+*.db
+*.sqlite
+*.duckdb
+
+# Large assets
+public/videos
+public/large-images

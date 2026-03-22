@@ -127,4 +127,4 @@ Using `toLocaleString()` / `toLocaleDateString()` without a locale uses the brow
 - Schema and API fields: [DATABASE_AND_API_DESIGN.md](DATABASE_AND_API_DESIGN.md)
 - date-fns patterns: [date-fns.org](https://date-fns.org/)
 - Re-exports: `src/lib/date-utils.ts`
-- Calendar/date components: [COMPONENT_INVENTORY.md](../COMPONENT_INVENTORY.md) / [COMPONENT_BOILERPLATE_INVENTORY.md](COMPONENT_BOILERPLATE_INVENTORY.md)
+- Calendar/date components: [COMPONENT_INVENTORY.md](architecture/COMPONENT_INVENTORY.md) / [COMPONENT_BOILERPLATE_INVENTORY.md](COMPONENT_BOILERPLATE_INVENTORY.md)

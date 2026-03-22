@@ -1,5 +1,6 @@
 /**
- * GET /api/v1/agent/commission – Commission statement from agent transactions (fee = commission).
+ * GET /api/v1/agent/commission – Commission statement from agent transactions.
+ * Roles: agent (RBAC enforced: agent.dashboard permission).
  * Query: agent_id (required), period (optional: current_month | last_month).
  */
 
@@ -8,6 +9,8 @@ import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { transactions } from "@/db/schema";
 import { jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 import { logger } from "@/lib/logger";
 
 const ROUTE = "GET /api/v1/agent/commission";
@@ -28,6 +31,14 @@ function monthBounds(period: "current_month" | "last_month"): { start: Date; end
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require agent.dashboard permission (SEC-001)
+    const auth = await requirePermission(request, "agent.dashboard", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const agentId = request.nextUrl.searchParams.get("agent_id");
     const periodParam = request.nextUrl.searchParams.get("period");
     const period = periodParam === "last_month" ? "last_month" : "current_month";

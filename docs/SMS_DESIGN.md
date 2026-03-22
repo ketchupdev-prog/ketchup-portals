@@ -56,6 +56,8 @@ npx drizzle-kit push
 
 ## 5. Environment Variables
 
+Set in `.env` or `.env.local` (and in Vercel for production). See [DOMAIN_AND_ENV_RECOMMENDATIONS.md](DOMAIN_AND_ENV_RECOMMENDATIONS.md).
+
 In `.env.local` and Vercel:
 
 - `SMS_API_URL` – gateway endpoint (e.g. InfoBip, Twilio).
@@ -78,7 +80,7 @@ In `.env.local` and Vercel:
 Or call manually:
 
 ```bash
-curl -X POST https://your-app.vercel.app/api/v1/sms/process \
+curl -X POST https://portal.ketchup.cc/api/v1/sms/process \
   -H "Authorization: Bearer YOUR_CRON_SECRET"
 ```
 

@@ -4,7 +4,7 @@
  * Location: src/lib/portal-auth-config.ts
  */
 
-export type PortalSlug = 'ketchup' | 'government' | 'agent' | 'field-ops';
+export type PortalSlug = 'ketchup' | 'government' | 'agent' | 'field-ops' | 'admin';
 
 export const PORTAL_AUTH: Record<
   PortalSlug,
@@ -42,6 +42,14 @@ export const PORTAL_AUTH: Record<
     forgotSubline: "Field Ops Portal — we'll send you a link to reset your password.",
     label: 'Field Ops Portal',
   },
+  admin: {
+    defaultRedirect: '/admin/dashboard',
+    loginTitle: 'Sign in to Admin Portal',
+    loginSubline: 'System monitoring, compliance, security, analytics & AI/ML management.',
+    forgotTitle: 'Reset password',
+    forgotSubline: "Admin Portal — we'll send you a link to reset your password.",
+    label: 'Admin Portal',
+  },
 };
 
 const PORTAL_PREFIXES: { prefix: string; portal: PortalSlug }[] = [
@@ -49,6 +57,7 @@ const PORTAL_PREFIXES: { prefix: string; portal: PortalSlug }[] = [
   { prefix: '/government', portal: 'government' },
   { prefix: '/agent', portal: 'agent' },
   { prefix: '/field-ops', portal: 'field-ops' },
+  { prefix: '/admin', portal: 'admin' },
 ];
 
 /**

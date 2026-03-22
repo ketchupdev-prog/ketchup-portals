@@ -1,6 +1,8 @@
 /**
  * GET /api/v1/reconciliation/daily – Daily reconciliation from transactions.
+ * Roles: ketchup_finance (RBAC enforced: reconciliation.view permission).
  * Query: date (optional, default today). Returns internal totals, bank_total, and transaction entries for the day.
+ * Response: { date, internal_total, bank_total, discrepancy, transaction_count, transaction_entries }.
  */
 
 import { NextRequest } from "next/server";
@@ -9,11 +11,21 @@ import { db } from "@/lib/db";
 import { transactions } from "@/db/schema";
 import { jsonError } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 const ROUTE = "GET /api/v1/reconciliation/daily";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require reconciliation.view permission (SEC-001)
+    const auth = await requirePermission(request, "reconciliation.view", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const dateParam = request.nextUrl.searchParams.get("date");
     const date = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)
       ? dateParam

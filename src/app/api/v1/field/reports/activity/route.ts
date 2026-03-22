@@ -1,16 +1,31 @@
 /**
- * GET /api/v1/field/reports/activity – Activity report from tasks and maintenance_logs (field_lead).
+ * GET /api/v1/field/reports/activity – Field activity report (tasks and maintenance logs).
  * Query: from, to (date YYYY-MM-DD). Returns tasks_completed, maintenance_logs, assets_visited, activity_rows.
+ * Roles: field_lead (RBAC enforced: field.tasks permission).
+ * Secured: RBAC, rate limiting.
  */
 
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { tasks, maintenanceLogs, assets, portalUsers } from "@/db/schema";
 import { sql, gte, lte, eq, and, inArray } from "drizzle-orm";
-import { jsonError } from "@/lib/api-response";
+import { jsonError, jsonSuccess } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
+
+const ROUTE = "GET /api/v1/field/reports/activity";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require field.tasks permission (SEC-001)
+    const auth = await requirePermission(request, "field.tasks", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const fromParam = request.nextUrl.searchParams.get("from") ?? new Date().toISOString().slice(0, 10);
     const toParam = request.nextUrl.searchParams.get("to") ?? new Date().toISOString().slice(0, 10);
     const fromDate = new Date(fromParam + "T00:00:00.000Z");
@@ -90,7 +105,7 @@ export async function GET(request: NextRequest) {
       })),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
-    return Response.json({
+    return jsonSuccess({
       from: fromParam,
       to: toParam,
       tasks_completed: tasksCompleted,
@@ -99,7 +114,7 @@ export async function GET(request: NextRequest) {
       activity_rows: activityRows,
     });
   } catch (err) {
-    console.error("GET /api/v1/field/reports/activity error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

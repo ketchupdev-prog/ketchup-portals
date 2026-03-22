@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/beneficiaries – List beneficiaries (paginated, filterable).
- * Roles: ketchup_*, gov_* (auth enforced when wired to Supabase).
+ * Roles: ketchup_*, gov_* (RBAC enforced: beneficiaries.list permission).
  * Response shape: { data, meta, links } per docs/DATABASE_AND_API_DESIGN.md.
  */
 
@@ -14,12 +14,21 @@ import {
 } from "@/lib/api-response";
 import { logger } from "@/lib/logger";
 import { isValidRegion, normalizeRegion } from "@/lib/regions";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
 
 const ROUTE = "GET /api/v1/beneficiaries";
 const basePath = "/api/v1/beneficiaries";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require beneficiaries.list permission (SEC-001)
+    const auth = await requirePermission(request, "beneficiaries.list", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const status = searchParams.get("status");

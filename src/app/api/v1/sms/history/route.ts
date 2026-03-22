@@ -1,6 +1,8 @@
 /**
  * GET /api/v1/sms/history – SMS history for a beneficiary (or all).
- * Query: beneficiary_id (optional). Roles: ketchup_support (no RBAC yet).
+ * Roles: ketchup_ops (RBAC enforced: sms.view permission).
+ * Security: RBAC, rate limiting.
+ * Query: beneficiary_id (optional).
  */
 
 import { NextRequest } from "next/server";
@@ -8,11 +10,23 @@ import { db } from "@/lib/db";
 import { smsQueue } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { parsePagination, paginationLinks, jsonPaginated, jsonError } from "@/lib/api-response";
+import { requirePermission } from "@/lib/require-permission";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/middleware/rate-limit";
+import { logger } from "@/lib/logger";
 
+const ROUTE = "GET /api/v1/sms/history";
 const basePath = "/api/v1/sms/history";
 
 export async function GET(request: NextRequest) {
   try {
+    // RBAC: Require sms.view permission (SEC-001)
+    const auth = await requirePermission(request, "sms.view", ROUTE);
+    if (auth) return auth;
+
+    // Rate limiting: Read-only endpoint (SEC-004)
+    const rateLimitResponse = await checkRateLimit(request, RATE_LIMITS.READ_ONLY);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const { searchParams } = new URL(request.url);
     const { page, limit, offset } = parsePagination(searchParams);
     const beneficiaryId = searchParams.get("beneficiary_id");
@@ -59,7 +73,7 @@ export async function GET(request: NextRequest) {
 
     return jsonPaginated(data, meta, links);
   } catch (err) {
-    console.error("GET /api/v1/sms/history error:", err);
-    return jsonError("Internal server error", "InternalError", undefined, 500);
+    logger.error(ROUTE, err instanceof Error ? err.message : "Error", { error: err });
+    return jsonError("Internal server error", "InternalError", undefined, 500, ROUTE);
   }
 }

@@ -6,7 +6,7 @@
  * Location: src/components/auth/PortalForgotForm.tsx
  */
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AuthHero } from '@/components/landing';
@@ -19,7 +19,7 @@ export interface PortalForgotFormProps {
   portal: PortalSlug;
 }
 
-export function PortalForgotForm({ portal }: PortalForgotFormProps) {
+function PortalForgotFormInner({ portal }: PortalForgotFormProps) {
   const config = PORTAL_AUTH[portal];
   const searchParams = useSearchParams();
   const returnTo = searchParams.get('returnTo') ?? searchParams.get('redirect') ?? config.defaultRedirect;
@@ -33,7 +33,7 @@ export function PortalForgotForm({ portal }: PortalForgotFormProps) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/auth/forgot-password', {
+      const res = await fetch('/api/v1/auth/request-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
@@ -42,7 +42,7 @@ export function PortalForgotForm({ portal }: PortalForgotFormProps) {
         setSent(true);
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? 'Something went wrong. Try again or contact support.');
+        setError(data.message ?? data.error ?? 'Something went wrong. Try again or contact support.');
       }
     } catch {
       setError('Request failed. Try again or contact support.');
@@ -68,7 +68,7 @@ export function PortalForgotForm({ portal }: PortalForgotFormProps) {
                   If an account exists for <strong>{email}</strong>, we’ve sent a reset link. Check your inbox and spam folder.
                 </p>
                 <p className="text-sm text-base-content/70">
-                  Reset flow is not fully implemented yet. For help, contact your administrator.
+                  The link will expire in 24 hours. If you don't receive the email within a few minutes, please check your spam folder.
                 </p>
                 <div className="card-actions flex flex-wrap gap-2 pt-2">
                   <Link href={backToLogin} className="link link-primary text-sm">
@@ -101,5 +101,20 @@ export function PortalForgotForm({ portal }: PortalForgotFormProps) {
         </Card>
       </section>
     </>
+  );
+}
+
+/** Wraps inner form so `useSearchParams` satisfies Next.js static generation (Suspense boundary). */
+export function PortalForgotForm(props: PortalForgotFormProps) {
+  return (
+    <Suspense
+      fallback={
+        <section className="flex min-h-[40vh] items-center justify-center px-4 py-10">
+          <span className="loading loading-spinner loading-lg text-primary" aria-label="Loading" />
+        </section>
+      }
+    >
+      <PortalForgotFormInner {...props} />
+    </Suspense>
   );
 }

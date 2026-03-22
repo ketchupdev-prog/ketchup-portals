@@ -1,0 +1,50 @@
+# -----------------------------------------------------------------------------
+# CI – Lint, type-check, test, build on push and PRs to main
+# Repo: ketchup-portals (or run from monorepo with working-directory set).
+# -----------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Unit tests
+        run: npm run test -- --run
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time only (no secrets). See .env.example for production.
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/db?sslmode=require"
+          NEXT_PUBLIC_NEON_AUTH_URL: "https://example.neon.tech/neondb/auth"
+          NEON_AUTH_BASE_URL: "https://example.neon.tech/neondb/auth"
+          NEON_AUTH_COOKIE_SECRET: "ci-secret-at-least-32-characters-long"
+          BUFFR_API_URL: "https://api.ketchup.cc"
+          NEXT_PUBLIC_PORTAL_URL: "https://portal.ketchup.cc"

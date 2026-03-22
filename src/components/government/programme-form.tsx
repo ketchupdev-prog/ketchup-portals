@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { REGION_SELECT_OPTIONS } from '@/lib/regions';
 
 export interface ProgrammeFormProps {
   initialValues?: { name: string; budget: string; region: string; description: string };
@@ -46,7 +47,7 @@ export function ProgrammeForm({
           <Input label="Programme name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Social Grant Q1" required />
           <Input label="Budget (NAD)" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g. 10000000" />
           <Select
-            options={[{ value: '', label: 'Select region' }, { value: 'all', label: 'All regions' }, { value: 'khomas', label: 'Khomas' }, { value: 'erongo', label: 'Erongo' }]}
+            options={REGION_SELECT_OPTIONS}
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Region"

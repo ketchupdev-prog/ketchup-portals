@@ -26,6 +26,9 @@ test-results/
 # misc
 .DS_Store
 *.pem
+.archive/
+LS_LA_OUTPUT.txt
+TREE_STRUCTURE.txt
 
 # debug
 npm-debug.log*
